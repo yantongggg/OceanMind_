@@ -1,0 +1,82 @@
+<!doctype html>
+<!-- Standalone WebGL diagnostic — no app code, no build step, no framework.
+     Answers one question: can THIS browser do what the globe needs?
+     Open http://localhost:5173/webgl-check.html and read the list. -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>OceanMind — WebGL check</title>
+<style>
+  body { background: #10141c; color: #e8eef6; font: 14px/1.7 ui-monospace, Consolas, monospace; padding: 32px; }
+  h1 { font-size: 16px; letter-spacing: .08em; }
+  .row { margin: 6px 0; }
+  .ok   { color: #4fc08d; }
+  .bad  { color: #e25b4a; font-weight: 700; }
+  .meta { color: #8ba0bc; }
+  canvas { border: 1px solid #2a3648; margin-top: 16px; display: block; }
+</style>
+</head>
+<body>
+<h1>OceanMind WebGL check</h1>
+<div id="out"></div>
+<canvas id="cv" width="220" height="120"></canvas>
+<script>
+const out = document.getElementById('out');
+const log = (label, ok, extra) => {
+  const div = document.createElement('div');
+  div.className = 'row';
+  div.innerHTML = '<span class="' + (ok ? 'ok' : 'bad') + '">' + (ok ? 'PASS' : 'FAIL') +
+    '</span>  ' + label + (extra ? '  <span class="meta">' + extra + '</span>' : '');
+  out.appendChild(div);
+};
+
+// 1-2: context creation, separately per version
+const probe = document.createElement('canvas');
+const gl2 = probe.getContext('webgl2');
+log('WebGL2 context', !!gl2);
+const gl1 = document.createElement('canvas').getContext('webgl');
+log('WebGL1 context', !!gl1);
+
+const gl = gl2 || gl1;
+if (!gl) {
+  log('everything else', false, 'no GL context at all — hardware acceleration is off or GPU is blocklisted. chrome://gpu has the details.');
+} else {
+  // 3: who is actually rendering (SwiftShader = software fallback, very slow)
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  const renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '(masked)';
+  log('renderer', !/swiftshader|software/i.test(renderer), renderer);
+
+  // 4: texture ceiling vs what the globe ships (4096×2048)
+  const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+  log('MAX_TEXTURE_SIZE ≥ 4096', maxTex >= 4096, String(maxTex));
+
+  // 5: prove actual drawing — clear the visible canvas teal-on-dark
+  const cv = document.getElementById('cv');
+  const g = cv.getContext('webgl2') || cv.getContext('webgl');
+  if (g) {
+    g.clearColor(0.06, 0.35, 0.32, 1);
+    g.clear(g.COLOR_BUFFER_BIT);
+    log('draw test', true, 'the box below should be teal, not black');
+  } else {
+    log('draw test', false, 'visible canvas got no context');
+  }
+
+  // 6: upload the actual earth texture the globe uses
+  const img = new Image();
+  img.onload = () => {
+    try {
+      const t = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      const err = gl.getError();
+      log('earth texture upload (4096×2048)', err === gl.NO_ERROR, err === gl.NO_ERROR ? img.width + '×' + img.height : 'glError ' + err);
+    } catch (e) {
+      log('earth texture upload', false, String(e).slice(0, 120));
+    }
+  };
+  img.onerror = () => log('earth texture fetch', false, '/textures/earth-blue-marble.jpg not served');
+  img.src = '/textures/earth-blue-marble.jpg';
+}
+</script>
+</body>
+</html>

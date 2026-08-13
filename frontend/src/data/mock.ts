@@ -1,0 +1,2644 @@
+/**
+ * OceanMind — golden demo dataset.
+ *
+ * ONE coherent story: on 12–14 July 2026 a Red Sea / Bab el-Mandeb security
+ * escalation is captured from news signals. The agent pipeline detects it,
+ * explains the causal chain, simulates routings for VYG-2026-0007
+ * (MV OceanMind Harmony, Port Klang → Rotterdam) and recommends a Cape of
+ * Good Hope reroute + slow steaming + bunker shift to Straits Marine Energy
+ * — decision DEC-0042, reliability READY, awaiting human approval.
+ *
+ * Every number here is deliberately cross-consistent:
+ *   Suez baseline  : 8,320 nm · 24.0 d · 2,850 t VLSFO · USD 1.653M · 8,980 tCO₂
+ *   Cape raw       : 11,720 nm · 29.5 d · 3,186 t · +11.8% CO₂
+ *   Cape + slowstm : 11,720 nm · 31.5 d (+7.5 d) · 3,018 t · +5.9% CO₂ · +USD 182k fuel
+ *   Avoided        : ≈ USD 400k war-risk premium + Suez queue exposure
+ *   EU ETS 2026    : 70% phase-in, EUA ≈ €72/t, CH₄/N₂O in scope
+ */
+
+import type {
+  Signal,
+  Voyage,
+  Disruption,
+  Decision,
+  Supplier,
+  PipelineRun,
+  CausalNode,
+  CausalEdge,
+  EsgSummary,
+  ComplianceReport,
+} from './types';
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * SIGNALS — ~40 captured intelligence items, July 2026
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+export const mockSignals: Signal[] = [
+  /* ── Red Sea / Bab el-Mandeb escalation cluster (the golden trigger) ── */
+  {
+    id: 'SIG-0001',
+    title: 'Missile fired at container ship transiting Bab el-Mandeb; crew unharmed',
+    summary:
+      'A 9,400 TEU container vessel reported a near-miss missile strike 18 nm west of Mokha while transiting the Bab el-Mandeb strait northbound. UKMTO confirmed the incident and raised its regional alert level.',
+    plainEnglish:
+      'A commercial ship was shot at in the narrow entrance to the Red Sea. Warships are responding, and insurers will treat this stretch of water as significantly more dangerous starting immediately.',
+    notImplied:
+      'This does NOT imply the strait is closed, that any OceanMind vessel was targeted, or that Suez transits are suspended — traffic continues at elevated risk.',
+    category: 'geopolitical',
+    severity: 'critical',
+    lat: 13.47,
+    lon: 43.12,
+    source: 'Reuters',
+    publishedAt: '2026-07-12T04:41:00Z',
+    corroboration: 9,
+    affectedVoyageIds: ['VYG-2026-0007', 'VYG-2026-0004'],
+    affectedChokepoint: 'Bab el-Mandeb',
+  },
+  {
+    id: 'SIG-0002',
+    title: 'UKMTO raises Red Sea threat level to SEVERE after second drone incident',
+    summary:
+      'UK Maritime Trade Operations elevated its threat assessment for the southern Red Sea to SEVERE following a one-way drone attack on a products tanker 40 nm north of the Hanish Islands.',
+    plainEnglish:
+      'The official maritime security watchdog for the region now rates attacks as likely rather than possible. Ships are being told to consider alternative routing.',
+    notImplied:
+      'Does NOT imply naval escorts are unavailable or that all cargo classes face equal risk — car carriers and container tonnage have been preferentially targeted.',
+    category: 'geopolitical',
+    severity: 'critical',
+    lat: 14.2,
+    lon: 42.6,
+    source: 'Lloyd\'s List',
+    publishedAt: '2026-07-12T09:15:00Z',
+    corroboration: 7,
+    affectedVoyageIds: ['VYG-2026-0007', 'VYG-2026-0004'],
+    affectedChokepoint: 'Bab el-Mandeb',
+  },
+  {
+    id: 'SIG-0003',
+    title: 'War-risk premiums for Red Sea transits quadruple to 0.9% of hull value',
+    summary:
+      'Lloyd\'s market underwriters raised additional war-risk premiums for Red Sea / Gulf of Aden transits from 0.22% to 0.9% of hull value, with several syndicates declining container tonnage outright.',
+    plainEnglish:
+      'Insuring a single Suez voyage for a large container ship now costs roughly USD 400,000 more than last week — if cover can be found at all.',
+    notImplied:
+      'Does NOT imply cover is formally withdrawn; it remains available at sharply higher cost and with 48-hour notice-of-transit clauses.',
+    category: 'geopolitical',
+    severity: 'high',
+    lat: 15.0,
+    lon: 41.8,
+    source: 'Lloyd\'s List',
+    publishedAt: '2026-07-12T14:02:00Z',
+    corroboration: 6,
+    affectedVoyageIds: ['VYG-2026-0007'],
+    affectedChokepoint: 'Bab el-Mandeb',
+  },
+  {
+    id: 'SIG-0004',
+    title: 'Two container lines announce immediate Cape of Good Hope diversions',
+    summary:
+      'Two of the five largest container carriers instructed all Asia–Europe strings to divert via the Cape of Good Hope until further notice, citing crew safety and insurance economics.',
+    plainEnglish:
+      'Major competitors are already rerouting around Africa. Expect southbound Indian Ocean traffic to rise and Suez slot availability to fall.',
+    notImplied:
+      'Does NOT imply an industry-wide mandate — several carriers continue Suez transits with armed escorts and convoy timing.',
+    category: 'geopolitical',
+    severity: 'high',
+    lat: 12.8,
+    lon: 44.9,
+    source: 'TradeWinds',
+    publishedAt: '2026-07-13T02:30:00Z',
+    corroboration: 8,
+    affectedVoyageIds: ['VYG-2026-0007'],
+    affectedChokepoint: 'Bab el-Mandeb',
+  },
+  {
+    id: 'SIG-0005',
+    title: 'Coalition navies begin escorted convoy scheme through Bab el-Mandeb',
+    summary:
+      'A multinational naval task force announced twice-weekly escorted convoys through the Bab el-Mandeb corridor, with slots allocated 72 hours in advance and capped at 12 vessels per convoy.',
+    plainEnglish:
+      'Protected passage exists but is scarce: two convoys a week, twelve ships each, booked three days ahead. Missing a slot means anchoring in a threat area.',
+    notImplied:
+      'Does NOT imply convoy passage removes risk — escorted vessels have still been approached, and waiting at the convoy anchorage carries its own exposure.',
+    category: 'geopolitical',
+    severity: 'high',
+    lat: 12.6,
+    lon: 43.4,
+    source: 'Reuters',
+    publishedAt: '2026-07-13T06:55:00Z',
+    corroboration: 5,
+    affectedVoyageIds: ['VYG-2026-0007', 'VYG-2026-0004'],
+    affectedChokepoint: 'Bab el-Mandeb',
+  },
+  {
+    id: 'SIG-0006',
+    title: 'Suez Canal daily transits fall 38% week-on-week as carriers divert',
+    summary:
+      'Suez Canal Authority movement data shows southbound + northbound transits dropped from 62 to 39 per day. SCA offered a 15% toll rebate for July bookings to retain traffic.',
+    plainEnglish:
+      'Traffic through Suez is collapsing as ships avoid the Red Sea approach. The canal is discounting tolls, but the bottleneck is the strait south of it, not the canal itself.',
+    notImplied:
+      'Does NOT imply the canal is obstructed or that transit times inside the canal have changed.',
+    category: 'port',
+    severity: 'medium',
+    lat: 30.02,
+    lon: 32.58,
+    source: 'Suez Canal Authority',
+    publishedAt: '2026-07-13T10:20:00Z',
+    corroboration: 4,
+    affectedVoyageIds: ['VYG-2026-0007'],
+    affectedChokepoint: 'Suez Canal',
+  },
+  {
+    id: 'SIG-0007',
+    title: 'UNCTAD: Red Sea disruption could add 0.4pp to global consumer inflation',
+    summary:
+      'UNCTAD\'s rapid assessment estimates prolonged Red Sea diversions raise Asia–Europe container costs 42% and could add up to 0.4 percentage points to global consumer price inflation over 12 months.',
+    plainEnglish:
+      'This is a macro-scale disruption: rerouting is expensive enough, for long enough, to show up in worldwide consumer prices.',
+    notImplied:
+      'Does NOT imply container capacity is physically insufficient — longer routes absorb tonnage but the fleet can still carry demand.',
+    category: 'geopolitical',
+    severity: 'medium',
+    lat: 46.22,
+    lon: 6.15,
+    source: 'UNCTAD',
+    publishedAt: '2026-07-13T12:00:00Z',
+    corroboration: 3,
+    affectedVoyageIds: [],
+    affectedChokepoint: 'Bab el-Mandeb',
+  },
+  {
+    id: 'SIG-0008',
+    title: 'Galaxy-class car carrier reports small-arms fire near Hanish Islands',
+    summary:
+      'A PCTC en route Jeddah–Singapore reported small-arms fire from two skiffs 25 nm southeast of the Hanish Islands; the vessel executed evasive manoeuvres and continued.',
+    plainEnglish:
+      'Attacks are not limited to drones and missiles — small fast boats are also harassing ships along the same corridor.',
+    notImplied:
+      'Does NOT imply a boarding was attempted or that the skiffs pursued beyond the immediate area.',
+    category: 'piracy',
+    severity: 'high',
+    lat: 13.72,
+    lon: 42.71,
+    source: 'UKMTO',
+    publishedAt: '2026-07-13T15:47:00Z',
+    corroboration: 4,
+    affectedVoyageIds: ['VYG-2026-0007'],
+    affectedChokepoint: 'Bab el-Mandeb',
+  },
+  {
+    id: 'SIG-0009',
+    title: 'Egypt convenes emergency shipping summit over canal revenue collapse',
+    summary:
+      'Egypt\'s government convened carriers and P&I clubs in Cairo to discuss transit guarantees, after canal revenues fell an estimated USD 180M month-on-month.',
+    plainEnglish:
+      'Diplomatic efforts to restore Suez traffic are starting, but no security guarantee exists yet that insurers accept.',
+    notImplied:
+      'Does NOT imply a resolution timeline — previous escalation cycles took 6–14 weeks to normalise.',
+    category: 'geopolitical',
+    severity: 'medium',
+    lat: 30.04,
+    lon: 31.24,
+    source: 'Bloomberg',
+    publishedAt: '2026-07-14T08:10:00Z',
+    corroboration: 5,
+    affectedVoyageIds: ['VYG-2026-0007'],
+    affectedChokepoint: 'Suez Canal',
+  },
+
+  /* ── Downstream congestion knock-ons (APAC) ─────────────────────────── */
+  {
+    id: 'SIG-0010',
+    title: 'Singapore bunker demand spikes 22% as diverted tonnage tops up for Cape runs',
+    summary:
+      'MPA weekly figures show bunker sales up 22% w/w as Asia–Europe services take maximum fuel before the longer Cape routing. VLSFO barge slots quoted at 3–4 days\' wait.',
+    plainEnglish:
+      'Ships preparing to sail around Africa are filling their tanks in Singapore, straining barge availability and pushing local fuel prices up.',
+    notImplied:
+      'Does NOT imply Singapore is out of fuel — the constraint is barge scheduling, not inventory.',
+    category: 'port',
+    severity: 'high',
+    lat: 1.26,
+    lon: 103.82,
+    source: 'MPA Singapore',
+    publishedAt: '2026-07-13T09:00:00Z',
+    corroboration: 6,
+    affectedVoyageIds: ['VYG-2026-0007', 'VYG-2026-0001', 'VYG-2026-0003'],
+    affectedChokepoint: 'Malacca Strait',
+  },
+  {
+    id: 'SIG-0011',
+    title: 'Port Klang Westports reports berth waiting up to 30 hours',
+    summary:
+      'Westports Malaysia reported container berth waiting times of 24–30 hours as diverted services re-sequence port rotations, versus a 6-hour norm.',
+    plainEnglish:
+      'Port Klang is congested because rerouting ships changed their port call order all at once. Waiting a day-plus for a berth is now normal there.',
+    notImplied:
+      'Does NOT imply cargo operations are slower once berthed — crane productivity is unchanged.',
+    category: 'port',
+    severity: 'medium',
+    lat: 3.0,
+    lon: 101.39,
+    source: 'The Loadstar',
+    publishedAt: '2026-07-13T11:35:00Z',
+    corroboration: 4,
+    affectedVoyageIds: ['VYG-2026-0007'],
+  },
+  {
+    id: 'SIG-0012',
+    title: 'Malacca Strait VTS logs record daily transits as reroutes concentrate traffic',
+    summary:
+      'Klang VTS recorded 312 transits in 24 hours, the highest this year, as Cape-bound and Suez-bound traffic overlap in the strait.',
+    plainEnglish:
+      'The Malacca Strait is busier than ever — more ships in the same narrow water means more collision-avoidance manoeuvring and slower effective transits.',
+    notImplied:
+      'Does NOT imply any incident occurred or that transit is restricted.',
+    category: 'port',
+    severity: 'low',
+    lat: 2.5,
+    lon: 101.0,
+    source: 'gCaptain',
+    publishedAt: '2026-07-14T01:22:00Z',
+    corroboration: 2,
+    affectedVoyageIds: ['VYG-2026-0007', 'VYG-2026-0003'],
+    affectedChokepoint: 'Malacca Strait',
+  },
+  {
+    id: 'SIG-0013',
+    title: 'Colombo transshipment yard utilisation hits 92%',
+    summary:
+      'Colombo\'s main terminal reported 92% yard utilisation as Indian Ocean transshipment cargo builds ahead of longer Cape rotations.',
+    plainEnglish:
+      'A key relay port on the Asia–Europe route is nearly full, which slows container connections for cargo changing ships there.',
+    notImplied:
+      'Does NOT imply vessel berthing delays yet — the pressure is in the container yard, not at the quay.',
+    category: 'port',
+    severity: 'low',
+    lat: 6.94,
+    lon: 79.84,
+    source: 'Splash 247',
+    publishedAt: '2026-07-12T16:40:00Z',
+    corroboration: 2,
+    affectedVoyageIds: [],
+  },
+
+  /* ── Weather ────────────────────────────────────────────────────────── */
+  {
+    id: 'SIG-0014',
+    title: 'Typhoon Mirinae intensifies to Category 3 east of Luzon',
+    summary:
+      'JTWC upgraded Typhoon Mirinae to Category 3 with 100 kt sustained winds, tracking WNW at 12 kt toward the Luzon Strait; landfall or recurvature expected within 72 hours.',
+    plainEnglish:
+      'A major typhoon sits across the main Taiwan–Philippines shipping corridor. Transpacific services must decide now whether to route north or south of it.',
+    notImplied:
+      'Does NOT imply Taiwanese or Philippine ports are closed yet — closures typically begin 24–36 h before landfall.',
+    category: 'weather',
+    severity: 'high',
+    lat: 17.8,
+    lon: 125.5,
+    source: 'JTWC',
+    publishedAt: '2026-07-13T00:00:00Z',
+    corroboration: 5,
+    affectedVoyageIds: ['VYG-2026-0005', 'VYG-2026-0002'],
+  },
+  {
+    id: 'SIG-0015',
+    title: 'Southwest monsoon surge brings 5m swells to Arabian Sea lanes',
+    summary:
+      'IMD reported a strong monsoon surge generating 4.5–5.5 m significant wave heights across the Arabian Sea west of 70°E, expected to persist 5–7 days.',
+    plainEnglish:
+      'Heavy seas between India and the Gulf of Aden will slow ships and increase fuel burn on that leg for about a week.',
+    notImplied:
+      'Does NOT imply routes must change — this is a seasonal slowdown, not a hazard requiring diversion.',
+    category: 'weather',
+    severity: 'medium',
+    lat: 14.0,
+    lon: 65.0,
+    source: 'India Meteorological Department',
+    publishedAt: '2026-07-12T06:00:00Z',
+    corroboration: 3,
+    affectedVoyageIds: ['VYG-2026-0007', 'VYG-2026-0004'],
+  },
+  {
+    id: 'SIG-0016',
+    title: 'Agulhas Current advisory: abnormal wave risk off Wild Coast',
+    summary:
+      'South African Weather Service issued its standing winter advisory for abnormal waves (>10 m possible) where southwesterly gales oppose the Agulhas Current between Durban and East London.',
+    plainEnglish:
+      'Ships rounding South Africa in winter must respect the classic freak-wave zone off the Wild Coast — routing slightly offshore and slowing in gales is standard practice.',
+    notImplied:
+      'Does NOT imply the Cape route is unsafe — thousands of transits handle this with routine seamanship; it is a planning input, not a blocker.',
+    category: 'weather',
+    severity: 'medium',
+    lat: -32.8,
+    lon: 28.9,
+    source: 'SAWS',
+    publishedAt: '2026-07-13T05:30:00Z',
+    corroboration: 3,
+    affectedVoyageIds: ['VYG-2026-0007', 'VYG-2026-0008'],
+  },
+  {
+    id: 'SIG-0017',
+    title: 'Panama Canal raises daily transit slots to 34 as Gatún Lake recovers',
+    summary:
+      'The Panama Canal Authority increased booking slots from 31 to 34/day, citing improved Gatún Lake levels after early wet-season rainfall; draft limit unchanged at 49 ft.',
+    plainEnglish:
+      'Panama is recovering from last year\'s drought restrictions — slightly more ships can transit daily, easing the backlog on Asia–US East Coast routes.',
+    notImplied:
+      'Does NOT imply pre-drought capacity (36–38/day) is restored, nor that draft limits have been lifted.',
+    category: 'weather',
+    severity: 'low',
+    lat: 9.08,
+    lon: -79.68,
+    source: 'Panama Canal Authority',
+    publishedAt: '2026-07-11T20:15:00Z',
+    corroboration: 4,
+    affectedVoyageIds: ['VYG-2026-0006'],
+    affectedChokepoint: 'Panama Canal',
+  },
+  {
+    id: 'SIG-0018',
+    title: 'North Sea summer gale warning: 45 kt gusts in Dover Strait approaches',
+    summary:
+      'UK Met Office issued a gale warning for Dover Strait and southern North Sea, with 40–45 kt gusts and 3.5 m seas for 36 hours from 15 July.',
+    plainEnglish:
+      'Short, sharp summer storm at the English Channel entrance — arrival timing into Rotterdam may slip a few hours; pilot boarding could pause at the peak.',
+    notImplied:
+      'Does NOT imply Rotterdam port closure — the port operates through gales; only pilotage windows tighten.',
+    category: 'weather',
+    severity: 'low',
+    lat: 51.1,
+    lon: 1.6,
+    source: 'UK Met Office',
+    publishedAt: '2026-07-14T06:00:00Z',
+    corroboration: 2,
+    affectedVoyageIds: ['VYG-2026-0007', 'VYG-2026-0008'],
+    affectedChokepoint: 'Dover Strait',
+  },
+  {
+    id: 'SIG-0019',
+    title: 'La Niña watch: BoM flags elevated cyclone risk for 2026-27 Australian season',
+    summary:
+      'Australia\'s Bureau of Meteorology moved to La Niña WATCH, historically correlated with an earlier and more active Coral Sea cyclone season.',
+    plainEnglish:
+      'A seasonal heads-up: iron-ore and coal routes off Australia may see more weather interruptions from November onward.',
+    notImplied:
+      'Does NOT imply any near-term operational impact — this is a 4-month-out planning signal.',
+    category: 'weather',
+    severity: 'low',
+    lat: -20.0,
+    lon: 152.0,
+    source: 'Bureau of Meteorology',
+    publishedAt: '2026-07-10T03:00:00Z',
+    corroboration: 2,
+    affectedVoyageIds: ['VYG-2026-0003'],
+  },
+
+  /* ── Regulatory ─────────────────────────────────────────────────────── */
+  {
+    id: 'SIG-0020',
+    title: 'EU ETS maritime: 2026 surrender obligation confirmed at 70% incl. CH₄ and N₂O',
+    summary:
+      'The European Commission confirmed the 2026 maritime EU ETS phase-in: operators surrender allowances for 70% of verified 2025 emissions, with methane and nitrous oxide newly in scope from 1 January 2026.',
+    plainEnglish:
+      'Carbon costs for voyages touching the EU step up this year — 70% of emissions must be paid for (100% from 2027), and two extra greenhouse gases now count.',
+    notImplied:
+      'Does NOT imply non-EU voyages are charged — only 50% of emissions on voyages into/out of the EU, 100% within the EU, are in scope.',
+    category: 'regulatory',
+    severity: 'medium',
+    lat: 50.85,
+    lon: 4.35,
+    source: 'European Commission',
+    publishedAt: '2026-07-01T09:00:00Z',
+    corroboration: 6,
+    affectedVoyageIds: ['VYG-2026-0007', 'VYG-2026-0008'],
+  },
+  {
+    id: 'SIG-0021',
+    title: 'FuelEU Maritime: first compliance balances due; pooling market opens',
+    summary:
+      'Verifiers began issuing 2025 FuelEU GHG-intensity balances (limit 89.34 gCO₂e/MJ). A compliance-pooling marketplace opened with surplus prices around €320/tCO₂e.',
+    plainEnglish:
+      'Ships trading to Europe now have a fuel carbon-intensity score with real money attached — clean-fuel surpluses can be sold, deficits must be bought or penalised.',
+    notImplied:
+      'Does NOT imply conventional VLSFO becomes non-compliant — blending small bio fractions typically maintains compliance through 2029.',
+    category: 'regulatory',
+    severity: 'medium',
+    lat: 50.84,
+    lon: 4.36,
+    source: 'Lloyd\'s List',
+    publishedAt: '2026-07-08T13:45:00Z',
+    corroboration: 4,
+    affectedVoyageIds: ['VYG-2026-0007', 'VYG-2026-0002'],
+  },
+  {
+    id: 'SIG-0022',
+    title: 'IMO MEPC 84 advances Net-Zero Framework: global GHG levy vote set for October',
+    summary:
+      'MEPC 84 concluded with draft text for a global GHG fuel intensity standard and a levy mechanism, scheduled for adoption vote at an extraordinary session in October 2026.',
+    plainEnglish:
+      'A worldwide carbon price for shipping moved one step closer — pricing decisions made now should assume a global levy from 2028.',
+    notImplied:
+      'Does NOT imply the levy is agreed — the October vote could still fail or dilute the measure.',
+    category: 'regulatory',
+    severity: 'low',
+    lat: 51.49,
+    lon: -0.12,
+    source: 'IMO',
+    publishedAt: '2026-07-09T17:30:00Z',
+    corroboration: 5,
+    affectedVoyageIds: [],
+  },
+  {
+    id: 'SIG-0023',
+    title: 'MPA Singapore mandates digital bunkering documentation from 1 October',
+    summary:
+      'The Maritime and Port Authority of Singapore confirmed e-BDN (electronic bunker delivery notes) become mandatory for all licensed suppliers from 1 October 2026, ending paper BDNs.',
+    plainEnglish:
+      'Bunkering paperwork in Singapore goes fully digital this autumn — quantity disputes get easier to audit and mass-flow-meter data becomes the single source of truth.',
+    notImplied:
+      'Does NOT imply other ports follow the same timeline; Rotterdam and Fujairah have not announced mandates.',
+    category: 'regulatory',
+    severity: 'low',
+    lat: 1.27,
+    lon: 103.85,
+    source: 'MPA Singapore',
+    publishedAt: '2026-07-07T08:00:00Z',
+    corroboration: 3,
+    affectedVoyageIds: ['VYG-2026-0001', 'VYG-2026-0003'],
+  },
+  {
+    id: 'SIG-0024',
+    title: 'AMSA detains two bulkers in Newcastle over CII record irregularities',
+    summary:
+      'The Australian Maritime Safety Authority detained two Capesize bulkers after port state control found fuel-consumption records inconsistent with reported CII data.',
+    plainEnglish:
+      'Regulators are now actively auditing carbon-intensity paperwork at the berth — falsified or sloppy fuel records get ships detained.',
+    notImplied:
+      'Does NOT imply industry-wide fraud — two detentions from ~400 inspections this quarter.',
+    category: 'regulatory',
+    severity: 'low',
+    lat: -32.92,
+    lon: 151.78,
+    source: 'AMSA',
+    publishedAt: '2026-07-11T05:20:00Z',
+    corroboration: 2,
+    affectedVoyageIds: ['VYG-2026-0003'],
+  },
+  {
+    id: 'SIG-0025',
+    title: 'EU adds three shadow-fleet tankers to sanctions list after dark STS off Malaysia',
+    summary:
+      'The EU\'s 19th sanctions package designated three aframax tankers observed conducting dark ship-to-ship transfers in the South China Sea off eastern Malaysia.',
+    plainEnglish:
+      'Chartering or bunkering near sanctioned shadow-fleet vessels creates compliance exposure — counterparty screening matters more in Southeast Asian anchorages.',
+    notImplied:
+      'Does NOT imply Malaysian ports or legitimate STS operations are sanctioned.',
+    category: 'regulatory',
+    severity: 'medium',
+    lat: 4.8,
+    lon: 104.5,
+    source: 'Bloomberg',
+    publishedAt: '2026-07-10T14:10:00Z',
+    corroboration: 4,
+    affectedVoyageIds: [],
+  },
+
+  /* ── Piracy / security beyond the Red Sea ───────────────────────────── */
+  {
+    id: 'SIG-0026',
+    title: 'IMB: armed robbery attempts in Singapore Strait up 40% year-on-year',
+    summary:
+      'The ICC International Maritime Bureau logged 47 boarding attempts in the Singapore Strait January–June 2026, mostly opportunistic theft from bulkers underway at night in the eastbound lane.',
+    plainEnglish:
+      'Petty sea-robbery in the Singapore Strait keeps rising — extra lookouts and locked deck stores are standard mitigation; cargo and crew risk remains low.',
+    notImplied:
+      'Does NOT imply hijack risk — no vessel control incidents recorded; these are theft events.',
+    category: 'piracy',
+    severity: 'medium',
+    lat: 1.18,
+    lon: 103.9,
+    source: 'ICC IMB',
+    publishedAt: '2026-07-09T10:00:00Z',
+    corroboration: 3,
+    affectedVoyageIds: ['VYG-2026-0001', 'VYG-2026-0003'],
+    affectedChokepoint: 'Singapore Strait',
+  },
+  {
+    id: 'SIG-0027',
+    title: 'Gulf of Guinea: crew kidnapping from product tanker 90 nm off Brass',
+    summary:
+      'Five crew were taken from a product tanker in a night boarding 90 nm south of Brass, Nigeria — the third kidnap-for-ransom incident in the Gulf of Guinea this quarter.',
+    plainEnglish:
+      'West African piracy remains the world\'s most dangerous for crews. Ships transiting the Gulf of Guinea need hardened routines and ideally escort in the highest-risk box.',
+    notImplied:
+      'Does NOT imply the Cape route to Europe is affected — incidents concentrate within 150 nm of the Niger Delta, far east of the Cape–Europe track.',
+    category: 'piracy',
+    severity: 'high',
+    lat: 3.2,
+    lon: 6.1,
+    source: 'ICC IMB',
+    publishedAt: '2026-07-12T22:05:00Z',
+    corroboration: 5,
+    affectedVoyageIds: ['VYG-2026-0008'],
+  },
+  {
+    id: 'SIG-0028',
+    title: 'Somali basin: first skiff approach reported in 14 months',
+    summary:
+      'A bulk carrier reported a two-skiff approach 280 nm east of Mogadishu; the vessel increased speed and the skiffs broke off. First such report since May 2025.',
+    plainEnglish:
+      'A reminder that Somali piracy is dormant, not extinct — ships shifting to Cape routings should still follow BMP5 hardening through the western Indian Ocean.',
+    notImplied:
+      'Does NOT imply a resurgence — a single approach with no weapons sighted.',
+    category: 'piracy',
+    severity: 'low',
+    lat: 2.1,
+    lon: 50.3,
+    source: 'UKMTO',
+    publishedAt: '2026-07-11T13:40:00Z',
+    corroboration: 2,
+    affectedVoyageIds: ['VYG-2026-0007'],
+  },
+
+  /* ── Wider geopolitical ─────────────────────────────────────────────── */
+  {
+    id: 'SIG-0029',
+    title: 'Hormuz: IRGC seizes tanker in dispute over cargo documentation',
+    summary:
+      'Iranian forces boarded and detained a Marshall Islands-flag products tanker in the Strait of Hormuz, citing a commercial cargo dispute. Transit traffic otherwise normal.',
+    plainEnglish:
+      'One-off tanker detention in Hormuz — the strait remains open, but Gulf loadings carry familiar low-probability, high-impact seizure risk.',
+    notImplied:
+      'Does NOT imply a blockade or broader interference pattern; 110+ vessels transited normally the same day.',
+    category: 'geopolitical',
+    severity: 'medium',
+    lat: 26.57,
+    lon: 56.25,
+    source: 'Reuters',
+    publishedAt: '2026-07-13T18:25:00Z',
+    corroboration: 6,
+    affectedVoyageIds: ['VYG-2026-0004'],
+    affectedChokepoint: 'Strait of Hormuz',
+  },
+  {
+    id: 'SIG-0030',
+    title: 'South China Sea: coast guard standoff near Second Thomas Shoal resupply',
+    summary:
+      'Philippine and Chinese coast guard vessels shadowed each other during a resupply mission; water cannon used, no collision. Commercial routing unaffected.',
+    plainEnglish:
+      'Tensions flare periodically along the main South China Sea lane, but commercial traffic continues on normal routes with no interference.',
+    notImplied:
+      'Does NOT imply any restriction on merchant shipping lanes through the area.',
+    category: 'geopolitical',
+    severity: 'low',
+    lat: 9.72,
+    lon: 115.87,
+    source: 'AP',
+    publishedAt: '2026-07-12T11:30:00Z',
+    corroboration: 4,
+    affectedVoyageIds: ['VYG-2026-0002', 'VYG-2026-0006'],
+  },
+  {
+    id: 'SIG-0031',
+    title: 'Taiwan Strait transit advisory renewed ahead of August exercises window',
+    summary:
+      'Regional navies renewed advisories for the Taiwan Strait ahead of an announced PLA exercise window in early August; carriers weighing east-of-Taiwan routings.',
+    plainEnglish:
+      'Nothing has changed yet, but early August could bring temporary exercise closures east of the strait — schedules touching Taiwan should hold buffer.',
+    notImplied:
+      'Does NOT imply current transits are restricted.',
+    category: 'geopolitical',
+    severity: 'low',
+    lat: 24.5,
+    lon: 119.5,
+    source: 'Reuters',
+    publishedAt: '2026-07-14T04:50:00Z',
+    corroboration: 3,
+    affectedVoyageIds: ['VYG-2026-0005'],
+    affectedChokepoint: 'Taiwan Strait',
+  },
+
+  /* ── More port / market signals ─────────────────────────────────────── */
+  {
+    id: 'SIG-0032',
+    title: 'Rotterdam box terminals warn of peak-season yard density from Cape arrivals bunching',
+    summary:
+      'Port of Rotterdam Authority flagged that Cape-diverted services arriving off-window are bunching arrivals, lifting yard density to 85% at the largest deep-sea terminals.',
+    plainEnglish:
+      'Rotterdam is absorbing irregular arrivals caused by reroutes — expect a day or two of extra berth waiting into August.',
+    notImplied:
+      'Does NOT imply congestion at Maasvlakte anchorages today — waiting is currently under 24 hours.',
+    category: 'port',
+    severity: 'medium',
+    lat: 51.95,
+    lon: 4.05,
+    source: 'Port of Rotterdam Authority',
+    publishedAt: '2026-07-13T14:00:00Z',
+    corroboration: 3,
+    affectedVoyageIds: ['VYG-2026-0007', 'VYG-2026-0008'],
+  },
+  {
+    id: 'SIG-0033',
+    title: 'Durban bunker availability tightens; VLSFO premium +US$28/t over Singapore',
+    summary:
+      'Cape-routed traffic lifted Durban bunker demand sharply; suppliers quote 4–6 day lead times and a US$28/t premium to Singapore VLSFO.',
+    plainEnglish:
+      'Fuelling in South Africa is getting expensive and slow as everyone reroutes — better to load maximum fuel in Asia before the Cape leg.',
+    notImplied:
+      'Does NOT imply Durban cannot supply — lead times are manageable with 5+ days notice.',
+    category: 'port',
+    severity: 'medium',
+    lat: -29.87,
+    lon: 31.03,
+    source: 'Ship & Bunker',
+    publishedAt: '2026-07-13T16:20:00Z',
+    corroboration: 4,
+    affectedVoyageIds: ['VYG-2026-0007', 'VYG-2026-0008'],
+  },
+  {
+    id: 'SIG-0034',
+    title: 'VLSFO Singapore hits US$612/t, up 5.5% on reroute demand',
+    summary:
+      'Singapore VLSFO assessments rose to US$612/t as Cape diversions add ~15% distance to Asia–Europe voyages and demand pulls forward.',
+    plainEnglish:
+      'Fuel itself is getting pricier because everyone suddenly needs more of it — longer routes burn more, and buyers are topping up early.',
+    notImplied:
+      'Does NOT imply a supply shortage — refinery output is normal; this is a demand-driven move.',
+    category: 'port',
+    severity: 'medium',
+    lat: 1.29,
+    lon: 103.85,
+    source: 'Ship & Bunker',
+    publishedAt: '2026-07-14T02:00:00Z',
+    corroboration: 5,
+    affectedVoyageIds: ['VYG-2026-0007', 'VYG-2026-0001', 'VYG-2026-0003'],
+  },
+  {
+    id: 'SIG-0035',
+    title: 'Shanghai container spot rates to N. Europe jump 31% in one week',
+    summary:
+      'SCFI Europe leg printed a 31% w/w increase as carriers apply emergency surcharges and blank sailings to cover Cape diversions.',
+    plainEnglish:
+      'Freight rates are surging — the cost of the disruption is being passed to shippers within days, not months.',
+    notImplied:
+      'Does NOT imply capacity is unavailable — bookings remain open at the higher rates.',
+    category: 'port',
+    severity: 'medium',
+    lat: 31.23,
+    lon: 121.49,
+    source: 'Lloyd\'s List',
+    publishedAt: '2026-07-14T07:45:00Z',
+    corroboration: 4,
+    affectedVoyageIds: [],
+  },
+  {
+    id: 'SIG-0036',
+    title: 'Ningbo-Zhoushan resumes full operations after 12-hour fog closure',
+    summary:
+      'Dense fog closed Ningbo-Zhoushan approaches for 12 hours; pilotage resumed with a 15-vessel inbound queue cleared within a day.',
+    plainEnglish:
+      'Brief weather pause at the world\'s busiest cargo port — schedules recovered within a day; minimal ripple effects.',
+    notImplied:
+      'Does NOT imply lasting congestion.',
+    category: 'port',
+    severity: 'low',
+    lat: 29.94,
+    lon: 121.86,
+    source: 'gCaptain',
+    publishedAt: '2026-07-11T09:10:00Z',
+    corroboration: 2,
+    affectedVoyageIds: ['VYG-2026-0002'],
+  },
+  {
+    id: 'SIG-0037',
+    title: 'Jebel Ali launches green methanol bunkering pilot with two supply barges',
+    summary:
+      'DP World and ENOC began a green methanol bunkering pilot at Jebel Ali, initially serving two methanol-dual-fuel container vessels monthly.',
+    plainEnglish:
+      'Another major hub can now fuel methanol-powered ships — the alternative-fuel network keeps expanding along the Asia–Europe corridor.',
+    notImplied:
+      'Does NOT imply commercial-scale availability — volumes are pilot-level for now.',
+    category: 'regulatory',
+    severity: 'low',
+    lat: 25.01,
+    lon: 55.06,
+    source: 'Splash 247',
+    publishedAt: '2026-07-08T11:00:00Z',
+    corroboration: 3,
+    affectedVoyageIds: [],
+  },
+  {
+    id: 'SIG-0038',
+    title: 'Chittagong anchorage waiting doubles amid monsoon lighterage delays',
+    summary:
+      'Monsoon swells halved lighterage productivity at Chittagong outer anchorage; bulker waiting times doubled to 8–10 days.',
+    plainEnglish:
+      'Bangladesh\'s main port is badly slowed by seasonal weather — bulk cargoes routed there face over a week of waiting.',
+    notImplied:
+      'Does NOT imply container berths are equally affected — the delay is concentrated in outer-anchorage bulk lighterage.',
+    category: 'port',
+    severity: 'medium',
+    lat: 22.24,
+    lon: 91.83,
+    source: 'The Loadstar',
+    publishedAt: '2026-07-12T08:30:00Z',
+    corroboration: 2,
+    affectedVoyageIds: [],
+  },
+  {
+    id: 'SIG-0039',
+    title: 'Ambrey: targeting pattern analysis shows container tonnage at highest risk band',
+    summary:
+      'Security consultancy Ambrey\'s pattern analysis of 31 Red Sea incidents since May shows large container vessels and car carriers drawing 71% of attacks despite being 38% of transits.',
+    plainEnglish:
+      'If you operate big container ships, your class of vessel is the preferred target in the Red Sea right now — the risk is not evenly shared.',
+    notImplied:
+      'Does NOT imply tankers and bulkers are safe — they account for the remaining 29% of incidents.',
+    category: 'geopolitical',
+    severity: 'high',
+    lat: 13.9,
+    lon: 42.9,
+    source: 'Ambrey Analytics',
+    publishedAt: '2026-07-13T19:55:00Z',
+    corroboration: 4,
+    affectedVoyageIds: ['VYG-2026-0007'],
+    affectedChokepoint: 'Bab el-Mandeb',
+  },
+  {
+    id: 'SIG-0040',
+    title: 'Kra Isthmus land-bridge feasibility study revived by Thai government',
+    summary:
+      'Thailand\'s cabinet approved budget for a refreshed feasibility study of the Kra land-bridge as Malacca congestion and Red Sea instability renew interest in alternatives.',
+    plainEnglish:
+      'Long-shot infrastructure news: a Thai land route bypassing Malacca is being studied again. Nothing changes operationally for years, if ever.',
+    notImplied:
+      'Does NOT imply construction is approved or financed.',
+    category: 'geopolitical',
+    severity: 'low',
+    lat: 10.5,
+    lon: 99.0,
+    source: 'Bloomberg',
+    publishedAt: '2026-07-10T06:45:00Z',
+    corroboration: 2,
+    affectedVoyageIds: [],
+    affectedChokepoint: 'Malacca Strait',
+  },
+];
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * VOYAGES — 8 active voyages; VYG-2026-0007 is the golden one
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/** Suez (baseline) waypath: Port Klang → Rotterdam, [lon, lat]. */
+const SUEZ_WAYPOINTS: [number, number][] = [
+  [101.4, 3.0],   // Port Klang
+  [100.3, 2.2],   // Malacca Strait south
+  [98.0, 5.2],    // Malacca Strait north exit
+  [95.0, 6.0],    // Andaman Sea
+  [80.2, 5.8],    // south of Sri Lanka
+  [72.0, 8.5],    // Arabian Sea
+  [60.0, 12.0],   // approaching Gulf of Aden
+  [51.0, 12.4],   // Gulf of Aden
+  [43.4, 12.6],   // Bab el-Mandeb
+  [41.0, 16.0],   // southern Red Sea
+  [38.5, 21.5],   // central Red Sea
+  [34.5, 27.5],   // northern Red Sea
+  [32.55, 29.93], // Suez
+  [32.3, 31.3],   // Port Said
+  [28.0, 33.5],   // eastern Med
+  [19.0, 35.5],   // central Med
+  [11.5, 37.3],   // Strait of Sicily
+  [2.0, 37.2],    // western Med
+  [-5.4, 35.95],  // Gibraltar
+  [-9.8, 37.5],   // off Portugal
+  [-9.5, 43.0],   // off Cape Finisterre
+  [-5.0, 48.8],   // western Channel
+  [1.5, 50.9],    // Dover Strait
+  [4.14, 51.95],  // Rotterdam
+];
+
+/** Cape of Good Hope waypath: Port Klang → Rotterdam, [lon, lat]. */
+const CAPE_WAYPOINTS: [number, number][] = [
+  [101.4, 3.0],   // Port Klang
+  [100.3, 2.2],   // Malacca Strait south
+  [98.0, 5.2],    // Malacca exit
+  [94.0, 4.0],    // Bay of Bengal south
+  [86.0, -2.0],   // central Indian Ocean
+  [75.0, -12.0],  // SW Indian Ocean
+  [60.0, -22.0],  // east of Madagascar
+  [45.0, -28.5],  // Mozambique Channel south
+  [32.0, -33.5],  // off Wild Coast (slow-steam segment 1)
+  [25.0, -35.2],  // off Port Elizabeth
+  [18.3, -34.9],  // Cape of Good Hope
+  [12.0, -28.0],  // South Atlantic
+  [5.0, -15.0],   // off Angola
+  [-2.0, -3.0],   // Gulf of Guinea offshore (150+ nm off)
+  [-10.0, 6.0],   // off Liberia
+  [-18.0, 15.0],  // off Dakar (slow-steam segment 2)
+  [-16.0, 25.0],  // off Canaries
+  [-11.0, 35.0],  // off Morocco
+  [-9.8, 39.0],   // off Portugal
+  [-9.5, 43.5],   // Cape Finisterre
+  [-5.0, 48.8],   // western Channel
+  [1.5, 50.9],    // Dover Strait
+  [4.14, 51.95],  // Rotterdam
+];
+
+export const mockVoyages: Voyage[] = [
+  /* ── THE GOLDEN VOYAGE ──────────────────────────────────────────────── */
+  {
+    id: 'VYG-2026-0007',
+    vessel: {
+      id: 'VSL-007',
+      name: 'MV OceanMind Harmony',
+      imo: '9934567',
+      type: 'Container',
+      capacity: '14,000 TEU',
+      flag: 'Singapore',
+      builtYear: 2022,
+      fuelTypes: ['VLSFO', 'MGO', 'B24 biofuel blend'],
+    },
+    originPort: 'Port Klang',
+    originLat: 3.0,
+    originLon: 101.39,
+    destinationPort: 'Rotterdam',
+    destinationLat: 51.95,
+    destinationLon: 4.14,
+    departedAt: '2026-07-11T14:30:00Z',
+    etaOriginal: '2026-08-04T18:00:00Z',   // Suez plan of record, 24.0 days
+    etaCurrent: '2026-08-05T12:00:00Z',    // +18 h Suez-queue drift, pre-decision
+    progressPct: 6,
+    currentLat: 3.9,
+    currentLon: 99.6,                       // approaching the Malacca Strait NW-bound
+    status: 'underway',
+    cargo: '11,860 TEU — electronics, apparel, auto components (EU-bound)',
+    activeRouteId: 'RT-0007-A',
+    routeOptions: [
+      {
+        id: 'RT-0007-A',
+        label: 'Option A — Suez Canal (plan of record)',
+        waypoints: SUEZ_WAYPOINTS,
+        distanceNm: 8320,
+        etaDays: 24.0,
+        fuelTonnes: 2850,
+        fuelUsd: 1653000,
+        co2Tonnes: 8980,
+        riskScore: 82,
+        viaChokepoints: ['Malacca Strait', 'Bab el-Mandeb', 'Suez Canal', 'Gibraltar', 'Dover Strait'],
+        notes:
+          'War-risk premium now ≈ USD 400k for this transit; underwriters require 48 h notice and convoy slot (2/week, 12 vessels). Container tonnage is the preferred attack target class.',
+      },
+      {
+        id: 'RT-0007-B',
+        label: 'Option B — Cape of Good Hope + slow-steam ×2 (recommended)',
+        waypoints: CAPE_WAYPOINTS,
+        distanceNm: 11720,
+        etaDays: 31.5,
+        fuelTonnes: 3018,
+        fuelUsd: 1835000,
+        co2Tonnes: 9510,
+        riskScore: 28,
+        viaChokepoints: ['Malacca Strait', 'Cape of Good Hope', 'Dover Strait'],
+        notes:
+          'Slow-steam Wild Coast + Dakar segments (19.5 → 16.0 kn) cuts the CO₂ penalty from +11.8% to +5.9% via the speed-cube rule. Avoids war-risk premium entirely.',
+        recommended: true,
+      },
+      {
+        id: 'RT-0007-C',
+        label: 'Option C — Cape of Good Hope, full speed',
+        waypoints: CAPE_WAYPOINTS,
+        distanceNm: 11720,
+        etaDays: 29.5,
+        fuelTonnes: 3186,
+        fuelUsd: 1937000,
+        co2Tonnes: 10040,
+        riskScore: 30,
+        viaChokepoints: ['Malacca Strait', 'Cape of Good Hope', 'Dover Strait'],
+        notes:
+          '2 days faster than Option B but burns +168 t more fuel and emits +530 tCO₂ more; fails the carbon-aware ranking and worsens the FuelEU trajectory.',
+      },
+    ],
+    portCalls: [
+      {
+        port: 'Port Klang',
+        lat: 3.0,
+        lon: 101.39,
+        purpose: 'bunker',
+        etaISO: '2026-07-11T06:00:00Z',
+        congestionHours: 28,
+      },
+      {
+        port: 'Rotterdam',
+        lat: 51.95,
+        lon: 4.14,
+        purpose: 'discharge',
+        etaISO: '2026-08-05T12:00:00Z',
+        congestionHours: 20,
+      },
+    ],
+    fuelPlan: {
+      fuelType: 'VLSFO',
+      plannedTonnes: 2850,
+      consumedTonnes: 214,
+      bunkerPort: 'Port Klang',
+      supplierId: 'SUP-001',
+    },
+    co2ToDateTonnes: 674,
+    decisionIds: ['DEC-0042'],
+    charterer: 'Meridian Container Line',
+  },
+
+  /* ── Supporting fleet ───────────────────────────────────────────────── */
+  {
+    id: 'VYG-2026-0001',
+    vessel: {
+      id: 'VSL-001',
+      name: 'MV Coral Meridian',
+      imo: '9887012',
+      type: 'LNG Carrier',
+      capacity: '174,000 m³',
+      flag: 'Marshall Islands',
+      builtYear: 2021,
+      fuelTypes: ['LNG (boil-off)', 'MGO'],
+    },
+    originPort: 'Singapore',
+    originLat: 1.26,
+    originLon: 103.82,
+    destinationPort: 'Yokohama',
+    destinationLat: 35.44,
+    destinationLon: 139.66,
+    departedAt: '2026-07-09T22:00:00Z',
+    etaOriginal: '2026-07-18T08:00:00Z',
+    etaCurrent: '2026-07-18T08:00:00Z',
+    progressPct: 58,
+    currentLat: 18.5,
+    currentLon: 118.2,
+    status: 'underway',
+    cargo: '168,400 m³ LNG',
+    activeRouteId: 'RT-0001-A',
+    routeOptions: [
+      {
+        id: 'RT-0001-A',
+        label: 'Direct — South China Sea',
+        waypoints: [
+          [103.82, 1.26], [105.5, 3.0], [110.0, 8.0], [114.0, 12.0],
+          [118.5, 18.5], [122.0, 24.0], [128.0, 30.0], [136.0, 34.0], [139.66, 35.44],
+        ],
+        distanceNm: 2880,
+        etaDays: 8.4,
+        fuelTonnes: 620,
+        fuelUsd: 372000,
+        co2Tonnes: 1710,
+        riskScore: 22,
+        viaChokepoints: ['Singapore Strait', 'Taiwan Strait approaches'],
+        recommended: true,
+      },
+    ],
+    portCalls: [
+      { port: 'Yokohama', lat: 35.44, lon: 139.66, purpose: 'discharge', etaISO: '2026-07-18T08:00:00Z', congestionHours: 4 },
+    ],
+    fuelPlan: {
+      fuelType: 'LNG (boil-off)',
+      plannedTonnes: 620,
+      consumedTonnes: 358,
+      bunkerPort: 'Singapore',
+      supplierId: 'SUP-002',
+    },
+    co2ToDateTonnes: 986,
+    decisionIds: [],
+    charterer: 'Osaka Gas Chartering',
+  },
+  {
+    id: 'VYG-2026-0002',
+    vessel: {
+      id: 'VSL-002',
+      name: 'MV Jade Horizon',
+      imo: '9812345',
+      type: 'Container',
+      capacity: '8,500 TEU',
+      flag: 'Hong Kong',
+      builtYear: 2019,
+      fuelTypes: ['VLSFO', 'MGO'],
+    },
+    originPort: 'Shanghai',
+    originLat: 31.23,
+    originLon: 121.49,
+    destinationPort: 'Los Angeles',
+    destinationLat: 33.73,
+    destinationLon: -118.26,
+    departedAt: '2026-07-06T10:00:00Z',
+    etaOriginal: '2026-07-20T14:00:00Z',
+    etaCurrent: '2026-07-21T02:00:00Z',
+    progressPct: 54,
+    currentLat: 38.0,
+    currentLon: -168.0,
+    status: 'underway',
+    cargo: '7,900 TEU — consumer goods, machinery',
+    activeRouteId: 'RT-0002-A',
+    routeOptions: [
+      {
+        id: 'RT-0002-A',
+        label: 'Great circle — North Pacific (slow-steam for FuelEU pool credit)',
+        waypoints: [
+          [121.49, 31.23], [126.0, 32.5], [135.0, 34.0], [145.0, 36.5],
+          [160.0, 40.0], [180.0, 43.0], [-165.0, 42.0], [-150.0, 40.0],
+          [-135.0, 37.5], [-124.0, 35.0], [-118.26, 33.73],
+        ],
+        distanceNm: 5720,
+        etaDays: 14.7,
+        fuelTonnes: 1490,
+        fuelUsd: 894000,
+        co2Tonnes: 4695,
+        riskScore: 18,
+        viaChokepoints: [],
+        recommended: true,
+      },
+    ],
+    portCalls: [
+      { port: 'Los Angeles', lat: 33.73, lon: -118.26, purpose: 'discharge', etaISO: '2026-07-21T02:00:00Z', congestionHours: 14 },
+    ],
+    fuelPlan: {
+      fuelType: 'VLSFO',
+      plannedTonnes: 1490,
+      consumedTonnes: 806,
+      bunkerPort: 'Shanghai',
+      supplierId: null,
+    },
+    co2ToDateTonnes: 2540,
+    decisionIds: ['DEC-0039'],
+    charterer: 'TransPac Container Services',
+  },
+  {
+    id: 'VYG-2026-0003',
+    vessel: {
+      id: 'VSL-003',
+      name: 'MV Selat Pearl',
+      imo: '9776543',
+      type: 'Bulk Carrier',
+      capacity: '82,000 DWT',
+      flag: 'Panama',
+      builtYear: 2017,
+      fuelTypes: ['VLSFO'],
+    },
+    originPort: 'Port Hedland',
+    originLat: -20.31,
+    originLon: 118.58,
+    destinationPort: 'Qingdao',
+    destinationLat: 36.07,
+    destinationLon: 120.38,
+    departedAt: '2026-07-08T04:00:00Z',
+    etaOriginal: '2026-07-19T20:00:00Z',
+    etaCurrent: '2026-07-20T10:00:00Z',
+    progressPct: 47,
+    currentLat: 2.1,
+    currentLon: 117.9,
+    status: 'underway',
+    cargo: '80,500 t iron ore',
+    activeRouteId: 'RT-0003-A',
+    routeOptions: [
+      {
+        id: 'RT-0003-A',
+        label: 'Direct — Makassar Strait / South China Sea',
+        waypoints: [
+          [118.58, -20.31], [117.0, -12.0], [117.5, -4.0], [118.0, 2.1],
+          [119.0, 8.0], [119.5, 15.0], [120.0, 24.0], [120.38, 36.07],
+        ],
+        distanceNm: 3540,
+        etaDays: 11.7,
+        fuelTonnes: 405,
+        fuelUsd: 243000,
+        co2Tonnes: 1276,
+        riskScore: 20,
+        viaChokepoints: ['Makassar Strait'],
+        recommended: true,
+      },
+    ],
+    portCalls: [
+      { port: 'Qingdao', lat: 36.07, lon: 120.38, purpose: 'discharge', etaISO: '2026-07-20T10:00:00Z', congestionHours: 9 },
+    ],
+    fuelPlan: {
+      fuelType: 'VLSFO',
+      plannedTonnes: 405,
+      consumedTonnes: 192,
+      bunkerPort: 'Singapore',
+      supplierId: 'SUP-002',
+    },
+    co2ToDateTonnes: 605,
+    decisionIds: ['DEC-0041'],
+    charterer: 'Northern Ore Logistics',
+  },
+  {
+    id: 'VYG-2026-0004',
+    vessel: {
+      id: 'VSL-004',
+      name: 'MV Andaman Star',
+      imo: '9723456',
+      type: 'Crude Tanker (VLCC)',
+      capacity: '300,000 DWT',
+      flag: 'Liberia',
+      builtYear: 2016,
+      fuelTypes: ['VLSFO', 'HSFO (scrubber)'],
+    },
+    originPort: 'Ras Tanura',
+    originLat: 26.64,
+    originLon: 50.16,
+    destinationPort: 'Chiba',
+    destinationLat: 35.57,
+    destinationLon: 140.09,
+    departedAt: '2026-07-05T16:00:00Z',
+    etaOriginal: '2026-07-26T06:00:00Z',
+    etaCurrent: '2026-07-26T18:00:00Z',
+    progressPct: 41,
+    currentLat: 6.2,
+    currentLon: 78.4,
+    status: 'underway',
+    cargo: '1.9M bbl crude oil',
+    activeRouteId: 'RT-0004-A',
+    routeOptions: [
+      {
+        id: 'RT-0004-A',
+        label: 'Direct — Hormuz / Malacca',
+        waypoints: [
+          [50.16, 26.64], [56.5, 26.3], [60.0, 22.0], [68.0, 12.0],
+          [78.4, 6.2], [90.0, 5.5], [98.0, 5.2], [100.3, 2.2],
+          [104.0, 1.5], [110.0, 5.0], [116.0, 12.0], [122.0, 22.0],
+          [130.0, 30.0], [140.09, 35.57],
+        ],
+        distanceNm: 6650,
+        etaDays: 20.5,
+        fuelTonnes: 1780,
+        fuelUsd: 1032000,
+        co2Tonnes: 5610,
+        riskScore: 38,
+        viaChokepoints: ['Strait of Hormuz', 'Malacca Strait', 'Singapore Strait'],
+        recommended: true,
+        notes: 'Monsoon swell adds ~0.5 kn speed loss across the Arabian Sea leg this week.',
+      },
+    ],
+    portCalls: [
+      { port: 'Chiba', lat: 35.57, lon: 140.09, purpose: 'discharge', etaISO: '2026-07-26T18:00:00Z', congestionHours: 6 },
+    ],
+    fuelPlan: {
+      fuelType: 'VLSFO',
+      plannedTonnes: 1780,
+      consumedTonnes: 745,
+      bunkerPort: 'Fujairah',
+      supplierId: 'SUP-006',
+    },
+    co2ToDateTonnes: 2348,
+    decisionIds: [],
+    charterer: 'Tokyo Petroleum Trading',
+  },
+  {
+    id: 'VYG-2026-0005',
+    vessel: {
+      id: 'VSL-005',
+      name: 'MV Pacific Aurora',
+      imo: '9856789',
+      type: 'Container',
+      capacity: '10,000 TEU',
+      flag: 'Singapore',
+      builtYear: 2020,
+      fuelTypes: ['VLSFO', 'MGO'],
+    },
+    originPort: 'Kaohsiung',
+    originLat: 22.61,
+    originLon: 120.28,
+    destinationPort: 'Long Beach',
+    destinationLat: 33.75,
+    destinationLon: -118.19,
+    departedAt: '2026-07-12T08:00:00Z',
+    etaOriginal: '2026-07-25T16:00:00Z',
+    etaCurrent: '2026-07-27T04:00:00Z',
+    progressPct: 12,
+    currentLat: 23.9,
+    currentLon: 124.5,
+    status: 'delayed',
+    cargo: '9,200 TEU — semiconductors, bicycles, furniture',
+    activeRouteId: 'RT-0005-B',
+    routeOptions: [
+      {
+        id: 'RT-0005-A',
+        label: 'Great circle — north of Typhoon Mirinae (original)',
+        waypoints: [
+          [120.28, 22.61], [124.5, 23.9], [132.0, 28.0], [142.0, 33.0],
+          [160.0, 40.0], [180.0, 44.0], [-160.0, 43.0], [-140.0, 39.0],
+          [-125.0, 35.5], [-118.19, 33.75],
+        ],
+        distanceNm: 5980,
+        etaDays: 13.3,
+        fuelTonnes: 1620,
+        fuelUsd: 972000,
+        co2Tonnes: 5105,
+        riskScore: 66,
+        viaChokepoints: ['Luzon Strait'],
+        notes: 'Crosses Typhoon Mirinae forecast cone within 48 h — heavy-weather exposure.',
+      },
+      {
+        id: 'RT-0005-B',
+        label: 'Southern deviation — clear of typhoon cone (active)',
+        waypoints: [
+          [120.28, 22.61], [123.0, 21.0], [130.0, 20.0], [140.0, 23.0],
+          [152.0, 30.0], [170.0, 38.0], [-170.0, 41.0], [-145.0, 38.0],
+          [-125.0, 35.0], [-118.19, 33.75],
+        ],
+        distanceNm: 6290,
+        etaDays: 14.8,
+        fuelTonnes: 1705,
+        fuelUsd: 1023000,
+        co2Tonnes: 5373,
+        riskScore: 24,
+        viaChokepoints: [],
+        recommended: true,
+        notes: 'Adds 310 nm but keeps 240+ nm separation from the typhoon track.',
+      },
+    ],
+    portCalls: [
+      { port: 'Long Beach', lat: 33.75, lon: -118.19, purpose: 'discharge', etaISO: '2026-07-27T04:00:00Z', congestionHours: 18 },
+    ],
+    fuelPlan: {
+      fuelType: 'VLSFO',
+      plannedTonnes: 1705,
+      consumedTonnes: 198,
+      bunkerPort: 'Kaohsiung',
+      supplierId: null,
+    },
+    co2ToDateTonnes: 624,
+    decisionIds: ['DEC-0040'],
+    charterer: 'Golden Gate Container Line',
+  },
+  {
+    id: 'VYG-2026-0006',
+    vessel: {
+      id: 'VSL-006',
+      name: 'MV Meridian Trader',
+      imo: '9798765',
+      type: 'Container',
+      capacity: '6,800 TEU',
+      flag: 'Malta',
+      builtYear: 2015,
+      fuelTypes: ['VLSFO', 'MGO'],
+    },
+    originPort: 'Shanghai',
+    originLat: 31.23,
+    originLon: 121.49,
+    destinationPort: 'Santos',
+    destinationLat: -23.98,
+    destinationLon: -46.29,
+    departedAt: '2026-07-02T12:00:00Z',
+    etaOriginal: '2026-08-01T10:00:00Z',
+    etaCurrent: '2026-07-31T22:00:00Z',
+    progressPct: 39,
+    currentLat: 12.5,
+    currentLon: -157.0,
+    status: 'underway',
+    cargo: '6,100 TEU — machinery, solar panels, textiles',
+    activeRouteId: 'RT-0006-A',
+    routeOptions: [
+      {
+        id: 'RT-0006-A',
+        label: 'Transpacific — Panama Canal',
+        waypoints: [
+          [121.49, 31.23], [135.0, 30.0], [155.0, 25.0], [180.0, 18.0],
+          [-157.0, 12.5], [-120.0, 10.0], [-95.0, 8.5], [-79.9, 9.3],
+          [-79.5, 8.9], [-78.0, 6.0], [-70.0, -5.0], [-55.0, -15.0],
+          [-46.29, -23.98],
+        ],
+        distanceNm: 10480,
+        etaDays: 29.9,
+        fuelTonnes: 2210,
+        fuelUsd: 1281000,
+        co2Tonnes: 6963,
+        riskScore: 26,
+        viaChokepoints: ['Panama Canal'],
+        recommended: true,
+        notes: 'Panama slots improved to 34/day — booking confirmed for 22 July.',
+      },
+    ],
+    portCalls: [
+      { port: 'Panama Canal', lat: 9.08, lon: -79.68, purpose: 'canal', etaISO: '2026-07-22T06:00:00Z', congestionHours: 16 },
+      { port: 'Santos', lat: -23.98, lon: -46.29, purpose: 'discharge', etaISO: '2026-07-31T22:00:00Z', congestionHours: 22 },
+    ],
+    fuelPlan: {
+      fuelType: 'VLSFO',
+      plannedTonnes: 2210,
+      consumedTonnes: 872,
+      bunkerPort: 'Balboa',
+      supplierId: null,
+    },
+    co2ToDateTonnes: 2747,
+    decisionIds: ['DEC-0038'],
+    charterer: 'Atlântico Sul Lines',
+  },
+  {
+    id: 'VYG-2026-0008',
+    vessel: {
+      id: 'VSL-008',
+      name: 'MV Atlas Crest',
+      imo: '9745678',
+      type: 'Bulk Carrier',
+      capacity: '180,000 DWT (Capesize)',
+      flag: 'Greece',
+      builtYear: 2018,
+      fuelTypes: ['VLSFO', 'HSFO (scrubber)'],
+    },
+    originPort: 'Richards Bay',
+    originLat: -28.8,
+    originLon: 32.08,
+    destinationPort: 'Rotterdam',
+    destinationLat: 51.95,
+    destinationLon: 4.14,
+    departedAt: '2026-07-04T09:00:00Z',
+    etaOriginal: '2026-07-24T12:00:00Z',
+    etaCurrent: '2026-07-25T00:00:00Z',
+    progressPct: 52,
+    currentLat: 4.8,
+    currentLon: -3.5,
+    status: 'underway',
+    cargo: '175,000 t coal',
+    activeRouteId: 'RT-0008-A',
+    routeOptions: [
+      {
+        id: 'RT-0008-A',
+        label: 'West Africa offshore — standard Cape–Europe track',
+        waypoints: [
+          [32.08, -28.8], [25.0, -35.2], [18.3, -34.9], [12.0, -28.0],
+          [5.0, -15.0], [-3.5, 4.8], [-12.0, 8.0], [-18.0, 15.0],
+          [-16.0, 25.0], [-11.0, 35.0], [-9.8, 39.0], [-9.5, 43.5],
+          [-5.0, 48.8], [1.5, 50.9], [4.14, 51.95],
+        ],
+        distanceNm: 7160,
+        etaDays: 20.1,
+        fuelTonnes: 1225,
+        fuelUsd: 723000,
+        co2Tonnes: 3860,
+        riskScore: 34,
+        viaChokepoints: ['Cape of Good Hope', 'Dover Strait'],
+        recommended: true,
+        notes: 'Track passes 160+ nm off the Niger Delta piracy box; BMP-WA hardening in effect.',
+      },
+    ],
+    portCalls: [
+      { port: 'Rotterdam', lat: 51.95, lon: 4.14, purpose: 'discharge', etaISO: '2026-07-25T00:00:00Z', congestionHours: 20 },
+    ],
+    fuelPlan: {
+      fuelType: 'VLSFO',
+      plannedTonnes: 1225,
+      consumedTonnes: 651,
+      bunkerPort: 'Durban',
+      supplierId: 'SUP-004',
+    },
+    co2ToDateTonnes: 2051,
+    decisionIds: ['DEC-0043'],
+    charterer: 'NorthSea Energy Imports',
+  },
+];
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * DISRUPTIONS — clustered events (derived from signals)
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+export const mockDisruptions: Disruption[] = [
+  {
+    id: 'DSR-001',
+    title: 'Red Sea / Bab el-Mandeb security escalation',
+    description:
+      'Nine corroborated signals over 60 hours: missile and drone attacks on merchant tonnage, SEVERE UKMTO threat level, war-risk premiums ×4, and two major carriers diverting. Container vessels are the preferred target class (71% of incidents).',
+    severity: 'critical',
+    region: 'Red Sea',
+    chokepoint: 'Bab el-Mandeb',
+    signalIds: ['SIG-0001', 'SIG-0002', 'SIG-0003', 'SIG-0004', 'SIG-0005', 'SIG-0006', 'SIG-0008', 'SIG-0009', 'SIG-0039'],
+    affectedVoyageIds: ['VYG-2026-0007', 'VYG-2026-0004'],
+    startedAt: '2026-07-12T04:41:00Z',
+    status: 'active',
+  },
+  {
+    id: 'DSR-002',
+    title: 'Typhoon Mirinae — Luzon Strait / Taiwan corridor',
+    description:
+      'Category 3 typhoon crossing the main transpacific departure corridor; recurvature vs landfall uncertain for 48 h. Port closures possible in Taiwan from 15 July.',
+    severity: 'high',
+    region: 'Western Pacific',
+    signalIds: ['SIG-0014', 'SIG-0031'],
+    affectedVoyageIds: ['VYG-2026-0005', 'VYG-2026-0002'],
+    startedAt: '2026-07-13T00:00:00Z',
+    status: 'active',
+  },
+  {
+    id: 'DSR-003',
+    title: 'Singapore–Klang bunker & berth congestion (reroute knock-on)',
+    description:
+      'Cape diversions concentrated bunker demand (+22%) and re-sequenced port rotations, pushing Port Klang berth waiting to 24–30 h and Singapore barge lead times to 3–4 days.',
+    severity: 'medium',
+    region: 'Southeast Asia',
+    chokepoint: 'Malacca Strait',
+    signalIds: ['SIG-0010', 'SIG-0011', 'SIG-0012', 'SIG-0034'],
+    affectedVoyageIds: ['VYG-2026-0007', 'VYG-2026-0001', 'VYG-2026-0003'],
+    startedAt: '2026-07-13T09:00:00Z',
+    status: 'monitoring',
+  },
+  {
+    id: 'DSR-004',
+    title: 'Gulf of Guinea kidnap-for-ransom activity',
+    description:
+      'Third crew kidnapping this quarter, 90 nm off Brass. Risk concentrated within 150 nm of the Niger Delta; Cape–Europe through-traffic advised to hold 150+ nm offshore.',
+    severity: 'high',
+    region: 'West Africa',
+    signalIds: ['SIG-0027'],
+    affectedVoyageIds: ['VYG-2026-0008'],
+    startedAt: '2026-07-12T22:05:00Z',
+    status: 'active',
+  },
+  {
+    id: 'DSR-005',
+    title: 'Panama Canal draft-restriction rumour (contradicted by ACP)',
+    description:
+      'A single secondary-source report suggested Gatún Lake levels could fall again in August, hinting at returning draft restrictions. The authoritative ACP signal shows the opposite — booking slots raised 31→34/day and draft stable at 49 ft — so the cluster is held at monitoring only.',
+    severity: 'low',
+    region: 'Central America',
+    chokepoint: 'Panama Canal',
+    signalIds: ['SIG-0017'],
+    affectedVoyageIds: ['VYG-2026-0006'],
+    startedAt: '2026-07-11T16:20:00Z',
+    status: 'monitoring',
+  },
+  {
+    id: 'DSR-006',
+    title: 'Transpacific schedule slack — VYG-2026-0002 ahead of LA berth window',
+    description:
+      'AIS schedule telemetry flagged MV Jade Horizon running 14 h ahead of the confirmed Los Angeles Pier 400 berth window (20–22 July) — pure schedule waste convertible into fuel and CO₂ savings via slow-steaming. Raised from voyage telemetry and terminal confirmations rather than external news signals.',
+    severity: 'low',
+    region: 'North Pacific',
+    signalIds: [],
+    affectedVoyageIds: ['VYG-2026-0002'],
+    startedAt: '2026-07-10T06:00:00Z',
+    status: 'resolved',
+  },
+];
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * SUPPLIERS — Supplier DNA
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+export const mockSuppliers: Supplier[] = [
+  {
+    id: 'SUP-001',
+    name: 'Straits Marine Energy',
+    port: 'Port Klang',
+    lat: 3.0,
+    lon: 101.39,
+    fuelsOffered: ['VLSFO', 'MGO', 'B24 biofuel blend'],
+    reliability: 96,
+    fuelQuality: 94,
+    esgScore: 91,
+    altFuelReadiness: 78,
+    priceCompetitiveness: 88,
+    incidents: [],
+    certifications: ['ISCC EU', 'ISO 8217:2024 lab partner', 'Marine Fuel Charter signatory'],
+    yearsActive: 14,
+    deliveriesYtd: 212,
+    // The golden pick: DEC-0042 shifts VYG-2026-0007's top-up bunkering here —
+    // USD 9/t under Singapore spot, ISCC-certified B24 available, zero incidents.
+  },
+  {
+    id: 'SUP-002',
+    name: 'Meridian Bunkering Singapore',
+    port: 'Singapore',
+    lat: 1.26,
+    lon: 103.82,
+    fuelsOffered: ['VLSFO', 'MGO', 'HSFO', 'B30 biofuel blend', 'LNG'],
+    reliability: 92,
+    fuelQuality: 95,
+    esgScore: 84,
+    altFuelReadiness: 86,
+    priceCompetitiveness: 74,
+    incidents: [
+      { date: '2026-03-18', summary: 'Barge scheduling slip — 9 h late delivery, no quantity variance', severity: 'low' },
+    ],
+    certifications: ['MPA licensed', 'ISCC EU', 'SS 648 e-BDN early adopter'],
+    yearsActive: 22,
+    deliveriesYtd: 486,
+  },
+  {
+    id: 'SUP-003',
+    name: 'RedSea Fuel Trading',
+    port: 'Jeddah',
+    lat: 21.48,
+    lon: 39.17,
+    fuelsOffered: ['VLSFO', 'HSFO'],
+    reliability: 61,
+    fuelQuality: 72,
+    esgScore: 48,
+    altFuelReadiness: 12,
+    priceCompetitiveness: 90,
+    incidents: [
+      { date: '2026-07-12', summary: 'Suspended deliveries — barge crews withdrawn amid security escalation', severity: 'critical' },
+      { date: '2026-05-02', summary: 'Off-spec sulphur (0.58% vs 0.50% max) on one stem; refund settled', severity: 'high' },
+      { date: '2026-02-11', summary: 'Quantity dispute — 14 t short vs BDN, resolved via MFM audit', severity: 'medium' },
+    ],
+    certifications: ['Saudi Ports Authority licensed'],
+    yearsActive: 8,
+    deliveriesYtd: 94,
+  },
+  {
+    id: 'SUP-004',
+    name: 'Cape Energy Partners',
+    port: 'Durban',
+    lat: -29.87,
+    lon: 31.03,
+    fuelsOffered: ['VLSFO', 'MGO'],
+    reliability: 83,
+    fuelQuality: 87,
+    esgScore: 76,
+    altFuelReadiness: 34,
+    priceCompetitiveness: 62,
+    incidents: [
+      { date: '2026-06-28', summary: 'Lead time blowout to 6 days under Cape-reroute demand surge', severity: 'medium' },
+    ],
+    certifications: ['TNPA licensed', 'ISO 9001'],
+    yearsActive: 11,
+    deliveriesYtd: 141,
+  },
+  {
+    id: 'SUP-005',
+    name: 'Rotterdam Green Fuels',
+    port: 'Rotterdam',
+    lat: 51.95,
+    lon: 4.14,
+    fuelsOffered: ['VLSFO', 'MGO', 'B30 biofuel blend', 'Bio-LNG', 'e-Methanol'],
+    reliability: 90,
+    fuelQuality: 93,
+    esgScore: 97,
+    altFuelReadiness: 95,
+    priceCompetitiveness: 58,
+    incidents: [],
+    certifications: ['ISCC EU', 'ISCC PLUS', 'Port of Rotterdam incentive partner', 'FuelEU pooling provider'],
+    yearsActive: 6,
+    deliveriesYtd: 173,
+  },
+  {
+    id: 'SUP-006',
+    name: 'Gulf Horizon Petroleum',
+    port: 'Fujairah',
+    lat: 25.11,
+    lon: 56.35,
+    fuelsOffered: ['VLSFO', 'HSFO', 'MGO'],
+    reliability: 75,
+    fuelQuality: 79,
+    esgScore: 55,
+    altFuelReadiness: 20,
+    priceCompetitiveness: 93,
+    incidents: [
+      { date: '2026-04-22', summary: 'Cat-fines above 40 ppm on one stem; purifier load raised, engine unaffected', severity: 'medium' },
+      { date: '2026-01-30', summary: 'Documentation gap — origin certificates delayed 3 weeks', severity: 'low' },
+    ],
+    certifications: ['FOIZ licensed'],
+    yearsActive: 17,
+    deliveriesYtd: 358,
+  },
+];
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * DECISIONS — 6 decisions; DEC-0042 is the golden one (READY, pending)
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+export const mockDecisions: Decision[] = [
+  {
+    id: 'DEC-0042',
+    voyageId: 'VYG-2026-0007',
+    disruptionId: 'DSR-001',
+    createdAt: '2026-07-14T09:12:00Z',
+    title: 'Reroute VYG-2026-0007 via Cape of Good Hope with slow-steaming',
+    recommendation: {
+      headline:
+        'Divert MV OceanMind Harmony to Route Option B (Cape of Good Hope), slow-steam the Wild Coast and Dakar segments, and shift top-up bunkering to Straits Marine Energy at Port Klang.',
+      actions: [
+        'Adopt Route Option B (Cape of Good Hope) before the vessel clears the Malacca Strait — divergence point in ~14 h.',
+        'Slow-steam segments Durban→Cape Town and Dakar→Canaries at 16.0 kn (from 19.5 kn), cutting the CO₂ penalty from +11.8% to +5.9%.',
+        'Bunker 620 t VLSFO + 180 t B24 biofuel at Port Klang with Straits Marine Energy (SUP-001) — USD 9/t under Singapore spot, ISCC EU chain of custody.',
+        'Notify charterer Meridian Container Line of revised ETA Rotterdam 12 Aug (+7.5 days) with evidence pack attached.',
+        'Cancel provisional Suez convoy slot request and release war-risk cover quote (saves ≈ USD 400k premium).',
+      ],
+    },
+    rationale:
+      'Nine corroborated signals establish a sustained targeting pattern against large container tonnage in the Bab el-Mandeb corridor. Continuing via Suez prices in a USD ~400k war-risk premium, convoy-slot delay risk (2/week), and unquantifiable crew risk. The Cape routing is 3,400 nm longer, but slow-steaming two segments exploits the cubic speed–fuel relationship to hold the CO₂ penalty to +5.9% and the fuel-cost delta to +USD 182k — a net saving of ≈ USD 218k versus escorted Suez transit once premium and delay-risk are counted. FuelEU GHG-intensity remains compliant (B24 blend at Port Klang improves the balance), and the 2026 EU ETS 70% phase-in adds only USD 18.7k liability on the incremental emissions.',
+    alternatives: [
+      {
+        id: 'ALT-0042-A',
+        label: 'Continue via Suez with armed escort / convoy slot',
+        summary:
+          'Hold Route Option A, book coalition convoy (next slot 19 July), accept 0.9% hull-value war-risk premium.',
+        impact: {
+          etaHours: 66,          // convoy wait + queue vs original plan
+          fuelUsd: 24000,
+          fuelTonnes: 41,
+          co2Tonnes: 130,
+          co2Pct: 1.4,
+          euEtsUsd: 4600,
+          riskScore: 74,
+        },
+        rejectionReason:
+          'War-risk premium ≈ USD 400k exceeds the reroute cost delta; convoy capacity (12 vessels, 2/week) is oversubscribed 3:1; and this vessel class draws 71% of attacks. Residual crew-safety risk is not compensable.',
+      },
+      {
+        id: 'ALT-0042-B',
+        label: 'Cape of Good Hope at full sea speed (Option C)',
+        summary: 'Divert via the Cape but maintain 19.5 kn throughout to limit the ETA slip to +5.5 days.',
+        impact: {
+          etaHours: 132,
+          fuelUsd: 284000,
+          fuelTonnes: 336,
+          co2Tonnes: 1060,
+          co2Pct: 11.8,
+          euEtsUsd: 37400,
+          riskScore: 30,
+        },
+        rejectionReason:
+          'Burns +168 t more fuel than the slow-steam plan for only 2 days of schedule recovery; doubles the CO₂ penalty (+11.8% vs +5.9%), doubles the EU ETS charge, and degrades the vessel\'s CII trajectory from B to C.',
+      },
+      {
+        id: 'ALT-0042-C',
+        label: 'Hold at Singapore anchorage awaiting de-escalation',
+        summary: 'Anchor off Singapore up to 7 days, then transit Suez if the threat level drops.',
+        impact: {
+          etaHours: 168,
+          fuelUsd: 61000,
+          fuelTonnes: 98,
+          co2Tonnes: 309,
+          co2Pct: 3.4,
+          euEtsUsd: 10900,
+          riskScore: 58,
+        },
+        rejectionReason:
+          'Previous escalation cycles took 6–14 weeks to normalise (SIG-0009 historical base rates) — a 7-day hold most likely converts into a late Cape diversion anyway, stacking the delay on top of the reroute. Anchorage congestion (SIG-0010) adds cost with no risk reduction.',
+      },
+    ],
+    impact: {
+      etaHours: 180,             // +7.5 days
+      fuelUsd: 182000,           // +USD 182k fuel
+      fuelTonnes: 168,
+      co2Tonnes: 530,            // +5.9% after slow-steaming
+      co2Pct: 5.9,
+      euEtsUsd: 18700,           // 2026 70% phase-in, EUA €72/t, 50% extra-EU scope
+      riskScore: 28,             // from 82 on Suez plan
+    },
+    evidence: [
+      {
+        id: 'EVD-0042-01',
+        label: '9 corroborated security signals in 60 h',
+        kind: 'signal',
+        detail:
+          'Missile near-miss (SIG-0001), UKMTO SEVERE (SIG-0002), small-arms fire (SIG-0008) — independent sources: Reuters, Lloyd\'s List, UKMTO, TradeWinds.',
+        sourceRef: 'SIG-0001',
+        confidence: 0.97,
+      },
+      {
+        id: 'EVD-0042-02',
+        label: 'Container tonnage is the preferred target class (71% of attacks)',
+        kind: 'signal',
+        detail: 'Ambrey pattern analysis of 31 incidents since May 2026 (SIG-0039) — directly applicable to a 14,000 TEU vessel.',
+        sourceRef: 'SIG-0039',
+        confidence: 0.9,
+      },
+      {
+        id: 'EVD-0042-03',
+        label: 'War-risk premium quantified at ≈ USD 400k',
+        kind: 'market',
+        detail: '0.9% of insured hull value (SIG-0003), quadrupled from 0.22% baseline; several syndicates declining container tonnage.',
+        sourceRef: 'SIG-0003',
+        confidence: 0.93,
+      },
+      {
+        id: 'EVD-0042-04',
+        label: 'Carbon calc: +11.8% raw → +5.9% with slow-steaming',
+        kind: 'calculation',
+        detail:
+          'carbon.compare(routeA, routeB): VLSFO EF 3.151 tCO₂/t · Suez 2,850 t → 8,980 tCO₂; Cape@19.5kn 3,186 t → 10,040 tCO₂ (+11.8%); Cape w/ 2 slow-steam segments 3,018 t → 9,510 tCO₂ (+5.9%). Speed-cube rule: (16.0/19.5)³ = 0.55× segment consumption.',
+        sourceRef: 'tools/carbon.py',
+        confidence: 1.0,
+      },
+      {
+        id: 'EVD-0042-05',
+        label: 'EU ETS 2026 liability delta: +USD 18.7k',
+        kind: 'calculation',
+        detail:
+          '530 tCO₂ incremental × 50% extra-EU voyage scope × 70% 2026 phase-in × €72/EUA × 1.08 USD/EUR × 1.297 finance provisioning uplift ≈ USD 18.7k (CH₄/N₂O in scope, negligible on VLSFO).',
+        sourceRef: 'tools/carbon.py · EU 2023/957',
+        confidence: 1.0,
+      },
+      {
+        id: 'EVD-0042-06',
+        label: 'FuelEU GHG-intensity check: PASS',
+        kind: 'regulation',
+        detail:
+          'Voyage blend incl. 180 t B24 at Port Klang → 87.1 gCO₂e/MJ vs 89.34 limit (−2.5%). ISCC EU chain of custody available from SUP-001.',
+        sourceRef: 'FuelEU Maritime Reg. (EU) 2023/1805',
+        confidence: 0.98,
+      },
+      {
+        id: 'EVD-0042-07',
+        label: 'Supplier DNA: Straits Marine Energy 96/100 reliability, 0 incidents',
+        kind: 'historical',
+        detail:
+          '212 deliveries YTD, zero quantity or quality incidents, USD 9/t under Singapore spot amid barge congestion (SIG-0010, SIG-0034).',
+        sourceRef: 'SUP-001',
+        confidence: 0.95,
+      },
+      {
+        id: 'EVD-0042-08',
+        label: 'Cape-route weather within seasonal norms',
+        kind: 'signal',
+        detail:
+          'Agulhas abnormal-wave advisory (SIG-0016) is a standing winter pattern handled by the slow-steam plan; no tropical systems on the Atlantic leg.',
+        sourceRef: 'SIG-0016',
+        confidence: 0.88,
+      },
+    ],
+    reliability: 'READY',
+    reliabilityNote:
+      'Evidence complete — 8/8 checks passed: signal corroboration ≥3 sources, deterministic cost/carbon calcs reproduced twice, no conflicting signals, all regulatory citations current.',
+    approval: null,
+    agentTrace: { pipelineRunId: 'RUN-2026-0042' },
+    status: 'pending',
+    severity: 'critical',
+  },
+
+  {
+    id: 'DEC-0041',
+    voyageId: 'VYG-2026-0003',
+    disruptionId: 'DSR-003',
+    createdAt: '2026-07-13T11:40:00Z',
+    title: 'Shift VYG-2026-0003 bunkering from spot barge to Meridian Bunkering window',
+    recommendation: {
+      headline:
+        'Lock a confirmed Meridian Bunkering Singapore barge window for 16 July instead of waiting spot, avoiding a 3–4 day barge queue.',
+      actions: [
+        'Book Meridian Bunkering (SUP-002) barge slot 16 July 04:00–10:00 SGT.',
+        'Take 240 t VLSFO (vs 405 t plan) — sufficient to Qingdao with 18% reserve; defer balance to cheaper CFR Qingdao market.',
+        'Hold transit speed; no route change required.',
+      ],
+    },
+    rationale:
+      'Singapore barge lead times blew out to 3–4 days on reroute-driven demand (+22% w/w). A confirmed window with a 92-reliability supplier avoids a likely 2-day idle at anchorage (≈ USD 34k TCE loss) for a modest USD 4/t premium.',
+    alternatives: [
+      {
+        id: 'ALT-0041-A',
+        label: 'Wait for spot barge availability',
+        summary: 'Stay in the spot queue; savings USD 4/t if a slot appears in time.',
+        impact: { etaHours: 44, fuelUsd: -1000, fuelTonnes: 0, co2Tonnes: 12, co2Pct: 0.9, euEtsUsd: 0, riskScore: 42 },
+        rejectionReason: 'Expected 2-day anchorage idle costs ~USD 34k against a USD 1k fuel saving.',
+      },
+    ],
+    impact: { etaHours: 0, fuelUsd: 1000, fuelTonnes: 0, co2Tonnes: 0, co2Pct: 0, euEtsUsd: 0, riskScore: 20 },
+    evidence: [
+      {
+        id: 'EVD-0041-01',
+        label: 'MPA barge congestion signal',
+        kind: 'signal',
+        detail: 'Bunker sales +22% w/w; VLSFO barge slots quoted 3–4 days (SIG-0010).',
+        sourceRef: 'SIG-0010',
+        confidence: 0.92,
+      },
+      {
+        id: 'EVD-0041-02',
+        label: 'Supplier DNA: Meridian 92/100 reliability',
+        kind: 'historical',
+        detail: '486 deliveries YTD, one low-severity scheduling slip in March.',
+        sourceRef: 'SUP-002',
+        confidence: 0.94,
+      },
+    ],
+    reliability: 'READY',
+    reliabilityNote: 'Evidence complete — cost model reproduced, supplier record verified.',
+    approval: {
+      approvedBy: 'Voyage Operations Manager',
+      approverEmail: 'ops@oceanmind.ai',
+      action: 'approved',
+      comment: 'Confirmed window booked. Good catch on the queue risk.',
+      at: '2026-07-13T14:05:00Z',
+    },
+    agentTrace: { pipelineRunId: 'RUN-2026-0041' },
+    status: 'approved',
+    severity: 'medium',
+  },
+
+  {
+    id: 'DEC-0040',
+    voyageId: 'VYG-2026-0005',
+    disruptionId: 'DSR-002',
+    createdAt: '2026-07-13T03:25:00Z',
+    title: 'Southern deviation for VYG-2026-0005 around Typhoon Mirinae',
+    recommendation: {
+      headline:
+        'Adopt the southern deviation (Route B) keeping 240+ nm from Typhoon Mirinae\'s forecast track; accept +1.5 days ETA.',
+      actions: [
+        'Divert to Route B immediately — southern track via 21°N before turning northeast.',
+        'Re-evaluate at 06:00Z daily against JTWC forecast updates; recurvature could allow an earlier northward cut.',
+        'Advise Long Beach terminal of revised ETA 27 July.',
+      ],
+    },
+    rationale:
+      'The original great-circle track crosses Mirinae\'s 72 h forecast cone. Heavy-weather transit risks container loss and structural stress on a 10,000 TEU vessel with high deck stacks. The southern deviation adds 310 nm (+85 t fuel) but keeps separation above the 200 nm company minimum. Forecast confidence is moderate (cone still wide), hence REVIEW rather than READY.',
+    alternatives: [
+      {
+        id: 'ALT-0040-A',
+        label: 'Hold original great-circle track',
+        summary: 'Maintain Route A and rely on the typhoon recurving northeast before intercept.',
+        impact: { etaHours: 0, fuelUsd: 0, fuelTonnes: 0, co2Tonnes: 0, co2Pct: 0, euEtsUsd: 0, riskScore: 66 },
+        rejectionReason: '40% of JTWC ensemble members keep Mirinae on an intercepting track — unacceptable parametric-roll exposure.',
+      },
+      {
+        id: 'ALT-0040-B',
+        label: 'Delay departure-adjacent waypoint by 36 h',
+        summary: 'Slow to 12 kn for 36 h and let the system pass ahead.',
+        impact: { etaHours: 40, fuelUsd: -18000, fuelTonnes: -31, co2Tonnes: -98, co2Pct: -1.9, euEtsUsd: 0, riskScore: 38 },
+        rejectionReason: 'Leaves the vessel in the trailing swell field and forfeits schedule with similar net delay to the deviation.',
+      },
+    ],
+    impact: { etaHours: 36, fuelUsd: 51000, fuelTonnes: 85, co2Tonnes: 268, co2Pct: 5.3, euEtsUsd: 0, riskScore: 24 },
+    evidence: [
+      {
+        id: 'EVD-0040-01',
+        label: 'JTWC Category 3 advisory',
+        kind: 'signal',
+        detail: '100 kt sustained, WNW at 12 kt; 72 h cone spans the planned track (SIG-0014).',
+        sourceRef: 'SIG-0014',
+        confidence: 0.85,
+      },
+      {
+        id: 'EVD-0040-02',
+        label: 'Voyage calc: deviation cost model',
+        kind: 'calculation',
+        detail: '+310 nm at 19 kn → +36 h, +85 t VLSFO, +268 tCO₂ (voyage_calc.deviation).',
+        sourceRef: 'tools/voyage_calc.py',
+        confidence: 1.0,
+      },
+    ],
+    reliability: 'REVIEW',
+    reliabilityNote:
+      'Human review advised — forecast-cone uncertainty exceeds threshold (ensemble spread 420 nm at 72 h). Recommendation is safe-side; review daily.',
+    approval: null,
+    agentTrace: { pipelineRunId: 'RUN-2026-0040' },
+    status: 'pending',
+    severity: 'high',
+  },
+
+  {
+    id: 'DEC-0039',
+    voyageId: 'VYG-2026-0002',
+    disruptionId: 'DSR-006',
+    createdAt: '2026-07-10T08:15:00Z',
+    title: 'Slow-steam VYG-2026-0002 transpacific leg for FuelEU pool credit',
+    recommendation: {
+      headline:
+        'Reduce transpacific speed 18.5 → 17.0 kn, arriving inside the LA berth window while banking 96 tCO₂e toward the fleet FuelEU pool.',
+      actions: [
+        'Set 17.0 kn from 155°E; berth window at Los Angeles (20–22 July) still met with 8 h buffer.',
+        'Credit the 96 tCO₂e saving to the fleet FuelEU compliance pool.',
+      ],
+    },
+    rationale:
+      'The vessel was running 14 h ahead of its berth window — pure schedule waste. The speed-cube rule converts that slack into a 3.9% fuel saving on the remaining leg with zero commercial impact.',
+    alternatives: [
+      {
+        id: 'ALT-0039-A',
+        label: 'Maintain 18.5 kn and anchor off San Pedro',
+        summary: 'Arrive early and wait at anchorage.',
+        impact: { etaHours: 0, fuelUsd: 0, fuelTonnes: 0, co2Tonnes: 0, co2Pct: 0, euEtsUsd: 0, riskScore: 22 },
+        rejectionReason: 'Burns 30 t more fuel to wait at anchor — strictly dominated by slow-steaming.',
+      },
+    ],
+    impact: { etaHours: 12, fuelUsd: -58000, fuelTonnes: -96, co2Tonnes: -302, co2Pct: -3.9, euEtsUsd: 0, riskScore: 18 },
+    evidence: [
+      {
+        id: 'EVD-0039-01',
+        label: 'Berth window confirmation',
+        kind: 'market',
+        detail: 'LA Pier 400 window 20 July 18:00 – 22 July 06:00 PDT confirmed by terminal.',
+        sourceRef: 'terminal-ops',
+        confidence: 0.96,
+      },
+      {
+        id: 'EVD-0039-02',
+        label: 'Speed-cube saving calc',
+        kind: 'calculation',
+        detail: '(17.0/18.5)³ = 0.776 × remaining consumption → −96 t / −302 tCO₂.',
+        sourceRef: 'tools/voyage_calc.py',
+        confidence: 1.0,
+      },
+    ],
+    reliability: 'READY',
+    reliabilityNote: 'Evidence complete — deterministic saving, no downside identified.',
+    approval: {
+      approvedBy: 'Voyage Operations Manager',
+      approverEmail: 'ops@oceanmind.ai',
+      action: 'approved',
+      comment: 'Approved — textbook slack conversion.',
+      at: '2026-07-10T09:02:00Z',
+    },
+    agentTrace: { pipelineRunId: 'RUN-2026-0039' },
+    status: 'approved',
+    severity: 'low',
+  },
+
+  {
+    id: 'DEC-0043',
+    voyageId: 'VYG-2026-0008',
+    disruptionId: 'DSR-004',
+    createdAt: '2026-07-14T06:50:00Z',
+    title: 'Security posture for VYG-2026-0008 transit past the Gulf of Guinea',
+    recommendation: {
+      headline:
+        'Escalated to the company security officer: embarked-escort quotes conflict with flag-state guidance on the current transit corridor.',
+      actions: [
+        'Hold current 160 nm offshore track (already outside the incident concentration box).',
+        'Escalate escort decision: private embarked team (USD 46k) vs flag-state advice that offshore track needs none.',
+        'Maintain BMP-WA hardening: doubled lookouts, citadel drill completed 13 July, AIS continuous.',
+      ],
+    },
+    rationale:
+      'The kidnapping 90 nm off Brass (SIG-0027) sits 380 nm east of the vessel\'s track. Historical incidents beyond 150 nm offshore are rare, but the charterer\'s security policy mandates escort quotes after any regional kidnap event — and the two inputs now conflict. Agent policy: conflicting authoritative guidance → ESCALATE, not recommend.',
+    alternatives: [
+      {
+        id: 'ALT-0043-A',
+        label: 'Contract embarked security team at Lomé',
+        summary: 'Divert 6 h to embark a 3-man team for the West Africa leg.',
+        impact: { etaHours: 8, fuelUsd: 46000, fuelTonnes: 4, co2Tonnes: 13, co2Pct: 0.3, euEtsUsd: 0, riskScore: 18 },
+        rejectionReason: 'Not rejected — held pending security-officer ruling; cost is defensible if policy requires it.',
+      },
+    ],
+    impact: { etaHours: 0, fuelUsd: 0, fuelTonnes: 0, co2Tonnes: 0, co2Pct: 0, euEtsUsd: 0, riskScore: 34 },
+    evidence: [
+      {
+        id: 'EVD-0043-01',
+        label: 'IMB kidnap incident 90 nm off Brass',
+        kind: 'signal',
+        detail: 'Third KFR incident this quarter; concentration within 150 nm of Niger Delta (SIG-0027).',
+        sourceRef: 'SIG-0027',
+        confidence: 0.95,
+      },
+      {
+        id: 'EVD-0043-02',
+        label: 'Conflicting guidance detected',
+        kind: 'regulation',
+        detail: 'Charterer security policy §4.2 (escort after regional KFR) vs Greek flag-state circular 2026-11 (no escort needed >150 nm offshore).',
+        sourceRef: 'policy/charterer-4.2',
+        confidence: 0.8,
+      },
+    ],
+    reliability: 'ESCALATE',
+    reliabilityNote:
+      'Conflicting authoritative inputs — charterer policy and flag-state guidance disagree; human security officer must rule. No autonomous recommendation issued.',
+    approval: null,
+    agentTrace: { pipelineRunId: 'RUN-2026-0043' },
+    status: 'pending',
+    severity: 'high',
+  },
+
+  {
+    id: 'DEC-0038',
+    voyageId: 'VYG-2026-0006',
+    disruptionId: 'DSR-005',
+    createdAt: '2026-07-11T19:30:00Z',
+    title: 'Panama draft-restriction contingency for VYG-2026-0006',
+    recommendation: {
+      headline:
+        'No action recommended — a single uncorroborated report of returning draft restrictions does not meet the evidence bar.',
+      actions: [
+        'Maintain Panama routing and 22 July booking slot.',
+        'Watch ACP daily advisories; auto-rerun this pipeline if a restriction is gazetted.',
+      ],
+    },
+    rationale:
+      'One secondary-source report suggested Gatún levels might fall again in August. The authoritative signal (SIG-0017, Panama Canal Authority) shows the opposite: slots raised to 34/day and drafts stable at 49 ft. One low-confidence source contradicted by the primary authority = insufficient evidence to act.',
+    alternatives: [
+      {
+        id: 'ALT-0038-A',
+        label: 'Pre-emptively rebook via Magellan Strait',
+        summary: 'Avoid Panama entirely on the southbound leg.',
+        impact: { etaHours: 216, fuelUsd: 385000, fuelTonnes: 640, co2Tonnes: 2017, co2Pct: 29.0, euEtsUsd: 0, riskScore: 40 },
+        rejectionReason: '+9 days and +USD 385k against a rumour contradicted by the canal authority itself.',
+      },
+    ],
+    impact: { etaHours: 0, fuelUsd: 0, fuelTonnes: 0, co2Tonnes: 0, co2Pct: 0, euEtsUsd: 0, riskScore: 26 },
+    evidence: [
+      {
+        id: 'EVD-0038-01',
+        label: 'ACP primary signal contradicts the rumour',
+        kind: 'signal',
+        detail: 'Slots raised 31→34/day, Gatún recovering, draft unchanged (SIG-0017).',
+        sourceRef: 'SIG-0017',
+        confidence: 0.94,
+      },
+    ],
+    reliability: 'INSUFFICIENT_EVIDENCE',
+    reliabilityNote:
+      'Single uncorroborated secondary report vs authoritative primary source — evidence-completeness gate blocks any action recommendation.',
+    approval: null,
+    agentTrace: { pipelineRunId: 'RUN-2026-0038' },
+    status: 'expired',
+    severity: 'low',
+  },
+];
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * PIPELINE RUN — scripted agent timeline for the golden scenario
+ * Detect → Explain → Simulate → Recommend → Approve
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+export const mockPipelineRun: PipelineRun = {
+  id: 'RUN-2026-0042',
+  decisionId: 'DEC-0042',
+  voyageId: 'VYG-2026-0007',
+  startedAt: '2026-07-14T09:02:00Z',
+  finishedAt: '2026-07-14T09:12:00Z',
+  status: 'complete',
+  events: [
+    /* ── DETECT — Disruption Intelligence Agent ───────────────────────── */
+    {
+      id: 'EVT-001',
+      ts: '2026-07-14T09:02:01Z',
+      agent: 'disruption',
+      stage: 'detect',
+      kind: 'observation',
+      title: 'Signal ingestion sweep complete',
+      detail:
+        'Ingested 40 signals from the last 96 h across GDELT news, UKMTO advisories, port authorities and market feeds. 12 signals reference the Red Sea corridor — 4× the trailing-30-day baseline for that geography.',
+      dataRefs: ['SIG-0001', 'SIG-0002', 'SIG-0003', 'SIG-0004'],
+    },
+    {
+      id: 'EVT-002',
+      ts: '2026-07-14T09:02:09Z',
+      agent: 'disruption',
+      stage: 'detect',
+      kind: 'analysis',
+      title: 'Clustering: 9 signals form one coherent event',
+      detail:
+        'DBSCAN over (geo, time, entity) space clusters SIG-0001/0002/0003/0004/0005/0006/0008/0009/0039 into a single disruption: kinetic attacks on merchant shipping at Bab el-Mandeb with insurance and carrier-behaviour knock-ons. Cluster silhouette 0.87 — clean separation from background noise.',
+      dataRefs: ['DSR-001'],
+    },
+    {
+      id: 'EVT-003',
+      ts: '2026-07-14T09:02:18Z',
+      agent: 'disruption',
+      stage: 'detect',
+      kind: 'analysis',
+      title: 'Corroboration check: 9 independent sources',
+      detail:
+        'Cross-source verification: Reuters, Lloyd\'s List, UKMTO, TradeWinds, Suez Canal Authority, Bloomberg, Ambrey. No single-source claims in the cluster core. Corroboration score 0.97 — well above the 0.6 action threshold.',
+      dataRefs: ['SIG-0001', 'SIG-0002', 'SIG-0039'],
+    },
+    {
+      id: 'EVT-004',
+      ts: '2026-07-14T09:02:26Z',
+      agent: 'disruption',
+      stage: 'detect',
+      kind: 'observation',
+      title: 'Severity escalated to CRITICAL',
+      detail:
+        'Escalation drivers: (1) kinetic attacks on merchant tonnage, (2) war-risk premium ×4 in 48 h, (3) two top-5 carriers already diverting, (4) targeting pattern skewed to large container vessels — 71% of incidents vs 38% of transits.',
+      dataRefs: ['DSR-001', 'SIG-0003', 'SIG-0004', 'SIG-0039'],
+    },
+    {
+      id: 'EVT-005',
+      ts: '2026-07-14T09:02:35Z',
+      agent: 'disruption',
+      stage: 'detect',
+      kind: 'analysis',
+      title: 'Fleet exposure scan: 2 voyages intersect the threat corridor',
+      detail:
+        'Route-intersection query over 8 active voyages: VYG-2026-0007 (Suez plan of record, Bab el-Mandeb transit in ~9 days — 14,000 TEU container, the highest-risk target class) and VYG-2026-0004 (VLCC, Hormuz–Malacca routing, no Red Sea transit — monitoring only). VYG-2026-0007 flagged for full pipeline.',
+      dataRefs: ['VYG-2026-0007', 'VYG-2026-0004'],
+    },
+    {
+      id: 'EVT-006',
+      ts: '2026-07-14T09:02:41Z',
+      agent: 'disruption',
+      stage: 'detect',
+      kind: 'handoff',
+      title: 'Handoff → Causal Impact Agent',
+      detail:
+        'Disruption DSR-001 (CRITICAL, corroboration 0.97) with exposure set {VYG-2026-0007} passed to causal analysis. Decision clock started: vessel reaches the route divergence point in ~14 h.',
+      dataRefs: ['DSR-001', 'VYG-2026-0007'],
+    },
+
+    /* ── EXPLAIN — Causal Impact Agent ────────────────────────────────── */
+    {
+      id: 'EVT-007',
+      ts: '2026-07-14T09:03:02Z',
+      agent: 'causal',
+      stage: 'explain',
+      kind: 'analysis',
+      title: 'Building causal graph from disruption cluster',
+      detail:
+        'Constructing DAG: Bab el-Mandeb escalation → (war-risk repricing, convoy scarcity) → Suez transit risk ↑ → carrier reroute pressure → (Cape traffic ↑, Suez transits −38%) → SE-Asia bunker/berth congestion → VYG-2026-0007 plan-of-record viability degraded.',
+      dataRefs: ['DSR-001', 'SIG-0006', 'SIG-0010'],
+    },
+    {
+      id: 'EVT-008',
+      ts: '2026-07-14T09:03:15Z',
+      agent: 'causal',
+      stage: 'explain',
+      kind: 'observation',
+      title: 'First-order impact: Suez plan risk score 82/100',
+      detail:
+        'Plan-of-record risk decomposition: security 48 (kinetic attack likelihood × target-class multiplier 1.9), insurance 18 (premium ×4, cover withdrawal risk), schedule 16 (convoy slots oversubscribed 3:1). Composite 82 — far above the 40-point action threshold.',
+      dataRefs: ['VYG-2026-0007', 'SIG-0005', 'SIG-0039'],
+    },
+    {
+      id: 'EVT-009',
+      ts: '2026-07-14T09:03:28Z',
+      agent: 'causal',
+      stage: 'explain',
+      kind: 'analysis',
+      title: 'Second-order effects: congestion propagation to Klang/Singapore',
+      detail:
+        'Reroute wave is already congesting the vessel\'s own origin region: Port Klang berth waiting 24–30 h (SIG-0011), Singapore barge lead 3–4 days (SIG-0010), VLSFO +5.5% (SIG-0034). Any plan requiring a SE-Asia bunker call must lock supply NOW, before the vessel exits the strait.',
+      dataRefs: ['SIG-0010', 'SIG-0011', 'SIG-0034'],
+    },
+    {
+      id: 'EVT-010',
+      ts: '2026-07-14T09:03:39Z',
+      agent: 'causal',
+      stage: 'explain',
+      kind: 'analysis',
+      title: 'Counterfactual: do-nothing trajectory quantified',
+      detail:
+        'If no action: vessel reaches Bab el-Mandeb ~23 July under SEVERE threat; war-risk premium ≈ USD 400k (0.9% hull value); convoy wait adds 2–3 days at an exposed anchorage; P(further escalation before transit) estimated 0.35 from historical cycle base rates (6–14 week normalisation).',
+      dataRefs: ['SIG-0003', 'SIG-0005', 'SIG-0009'],
+    },
+    {
+      id: 'EVT-011',
+      ts: '2026-07-14T09:03:47Z',
+      agent: 'causal',
+      stage: 'explain',
+      kind: 'observation',
+      title: 'Causal graph validated — 9 nodes, 10 edges, no cycles',
+      detail:
+        'Root cause traced: single origin event (Bab el-Mandeb escalation) explains 100% of the plan-of-record risk delta. Edge confidences 0.72–0.97. Graph published for the decision evidence pack.',
+      dataRefs: ['DSR-001'],
+    },
+    {
+      id: 'EVT-012',
+      ts: '2026-07-14T09:03:52Z',
+      agent: 'causal',
+      stage: 'explain',
+      kind: 'handoff',
+      title: 'Handoff → Scenario Simulation Agent',
+      detail:
+        'Causal model + do-nothing counterfactual passed to simulation. Constraint set attached: charterer delivery window Rotterdam ≤ 15 Aug, crew-safety policy (no SEVERE-corridor transit without board sign-off), FuelEU compliance must hold.',
+      dataRefs: ['VYG-2026-0007'],
+    },
+
+    /* ── SIMULATE — Scenario Simulation Agent + Deterministic Tools ───── */
+    {
+      id: 'EVT-013',
+      ts: '2026-07-14T09:04:10Z',
+      agent: 'simulation',
+      stage: 'simulate',
+      kind: 'analysis',
+      title: 'Enumerating feasible action space: 4 scenarios',
+      detail:
+        'Candidate scenarios: (A) hold Suez plan + convoy escort; (B) Cape of Good Hope + slow-steam 2 segments; (C) Cape at full sea speed; (D) hold at Singapore anchorage 7 days awaiting de-escalation. Infeasible options pruned: air-freight transload (cost ×11), Arctic NSR (no ice-class, insurance void).',
+      dataRefs: ['VYG-2026-0007'],
+    },
+    {
+      id: 'EVT-014',
+      ts: '2026-07-14T09:04:22Z',
+      agent: 'simulation',
+      stage: 'simulate',
+      kind: 'tool_call',
+      title: 'voyage_calc.route(A: Suez baseline)',
+      detail:
+        'Computing distance/time/fuel for Route A: Port Klang → Rotterdam via Bab el-Mandeb & Suez at 19.5 kn service speed, VLSFO consumption curve for 14,000 TEU class, July monsoon speed-loss factor applied on the Arabian Sea leg.',
+      dataRefs: ['RT-0007-A'],
+    },
+    {
+      id: 'EVT-015',
+      ts: '2026-07-14T09:04:29Z',
+      agent: 'tools',
+      stage: 'simulate',
+      kind: 'tool_result',
+      title: 'Route A: 8,320 nm · 24.0 d · 2,850 t VLSFO · USD 1.653M',
+      detail:
+        'Baseline confirmed vs plan of record (Δ < 0.5%). Add-ons: war-risk premium ≈ USD 400k (0.9% hull value per SIG-0003), convoy wait 48–72 h at Gulf of Aden anchorage. Fuel priced at Singapore VLSFO USD 580/t contract.',
+      dataRefs: ['RT-0007-A', 'SIG-0003'],
+    },
+    {
+      id: 'EVT-016',
+      ts: '2026-07-14T09:04:36Z',
+      agent: 'simulation',
+      stage: 'simulate',
+      kind: 'tool_call',
+      title: 'voyage_calc.route(B/C: Cape of Good Hope)',
+      detail:
+        'Computing Cape routing: Port Klang → Malacca → SW Indian Ocean → Cape of Good Hope → West Africa offshore (160+ nm) → Rotterdam. Variant B slow-steams Durban→Cape Town and Dakar→Canaries segments at 16.0 kn; variant C holds 19.5 kn throughout.',
+      dataRefs: ['RT-0007-B', 'RT-0007-C'],
+    },
+    {
+      id: 'EVT-017',
+      ts: '2026-07-14T09:04:44Z',
+      agent: 'tools',
+      stage: 'simulate',
+      kind: 'tool_result',
+      title: 'Route C (full speed): 11,720 nm · 29.5 d · 3,186 t · +USD 284k',
+      detail:
+        'Cape at 19.5 kn: +3,400 nm vs Suez, ETA +5.5 d, fuel +336 t (+USD 284k at blended price). No war-risk premium, no convoy dependency. Agulhas winter advisory (SIG-0016) handled by standard offshore routing.',
+      dataRefs: ['RT-0007-C', 'SIG-0016'],
+    },
+    {
+      id: 'EVT-018',
+      ts: '2026-07-14T09:04:52Z',
+      agent: 'tools',
+      stage: 'simulate',
+      kind: 'tool_result',
+      title: 'Route B (slow-steam ×2): 11,720 nm · 31.5 d · 3,018 t · +USD 182k',
+      detail:
+        'Speed-cube rule on 2 segments: (16.0/19.5)³ = 0.55× consumption over 2,150 nm of segments → saves 168 t vs full-speed Cape. Net vs Suez baseline: ETA +7.5 d, fuel +168 t / +USD 182k (includes SUP-001 price advantage of USD 9/t on the Port Klang stem).',
+      dataRefs: ['RT-0007-B'],
+    },
+    {
+      id: 'EVT-019',
+      ts: '2026-07-14T09:05:05Z',
+      agent: 'simulation',
+      stage: 'simulate',
+      kind: 'tool_call',
+      title: 'carbon.compare(baseline=A, candidates=[B, C])',
+      detail:
+        'IMO CO₂ emission factors: VLSFO 3.151 tCO₂/t fuel (MGO 3.206, HFO 3.114). Computing absolute and percentage deltas for each candidate route, plus EU ETS and FuelEU positions.',
+      dataRefs: ['RT-0007-A', 'RT-0007-B', 'RT-0007-C'],
+    },
+    {
+      id: 'EVT-020',
+      ts: '2026-07-14T09:05:13Z',
+      agent: 'tools',
+      stage: 'simulate',
+      kind: 'tool_result',
+      title: 'CO₂: A = 8,980 t · C = 10,040 t (+11.8%) · B = 9,510 t (+5.9%)',
+      detail:
+        'Slow-steaming halves the reroute carbon penalty: Route C raw +11.8% vs baseline; Route B lands at +5.9% (+530 tCO₂). Route B is the carbon-efficient diversion.',
+      dataRefs: ['RT-0007-B', 'RT-0007-C'],
+    },
+    {
+      id: 'EVT-021',
+      ts: '2026-07-14T09:05:21Z',
+      agent: 'tools',
+      stage: 'simulate',
+      kind: 'tool_result',
+      title: 'EU ETS 2026: Route B liability delta +USD 18.7k',
+      detail:
+        '2026 phase-in = 70% of emissions surrendered (100% from 2027); CH₄ & N₂O in scope from 1 Jan 2026 (negligible on VLSFO). Extra-EU voyage → 50% scope. 530 t × 0.5 × 0.7 × €72 × 1.08 × 1.297 provisioning uplift = USD 18.7k. Route C would cost USD 37.4k.',
+      dataRefs: ['SIG-0020'],
+    },
+    {
+      id: 'EVT-022',
+      ts: '2026-07-14T09:05:30Z',
+      agent: 'tools',
+      stage: 'simulate',
+      kind: 'tool_result',
+      title: 'FuelEU GHG-intensity: Route B = 87.1 gCO₂e/MJ → PASS',
+      detail:
+        'With 180 t B24 biofuel blended at Port Klang (ISCC EU certified, SUP-001), voyage GHG intensity = 87.1 gCO₂e/MJ vs the 89.34 limit — 2.5% compliance headroom. Without the bio stem: 90.8 → marginal FAIL. Bunker plan is therefore load-bearing for compliance.',
+      dataRefs: ['SIG-0021', 'SUP-001'],
+    },
+    {
+      id: 'EVT-023',
+      ts: '2026-07-14T09:05:44Z',
+      agent: 'simulation',
+      stage: 'simulate',
+      kind: 'analysis',
+      title: 'Scenario D (hold at anchor) simulated and dominated',
+      detail:
+        'Holding 7 days at Singapore anchorage: +USD 61k (anchorage, idle fuel, crew) with P(still must divert) ≈ 0.65 given 6–14 week historical normalisation cycles. Expected total delay 11.2 days — worse than committing to the Cape now on every axis except optionality.',
+      dataRefs: ['SIG-0009', 'SIG-0010'],
+    },
+    {
+      id: 'EVT-024',
+      ts: '2026-07-14T09:05:52Z',
+      agent: 'simulation',
+      stage: 'simulate',
+      kind: 'handoff',
+      title: 'Handoff → Decision Agent with 4 fully-costed scenarios',
+      detail:
+        'Scenario matrix complete: cost, ETA, CO₂, EU ETS, FuelEU, risk score per option. All deterministic numbers reproduced twice (tool double-run) with zero drift. Passing to constraint filtering and ranking.',
+      dataRefs: ['DEC-0042'],
+    },
+
+    /* ── RECOMMEND — Decision Agent ───────────────────────────────────── */
+    {
+      id: 'EVT-025',
+      ts: '2026-07-14T09:06:10Z',
+      agent: 'decision',
+      stage: 'recommend',
+      kind: 'analysis',
+      title: 'Hard constraints filtered the option set',
+      detail:
+        'Constraint pass: (1) crew-safety policy — no SEVERE-corridor transit without board sign-off → Scenario A requires escalation beyond ops authority; (2) charterer window Rotterdam ≤ 15 Aug → B (12 Aug) and C (10 Aug) both pass; (3) FuelEU compliance → all pass WITH the B24 stem. Surviving: B, C, D.',
+      dataRefs: ['DEC-0042'],
+    },
+    {
+      id: 'EVT-026',
+      ts: '2026-07-14T09:06:22Z',
+      agent: 'decision',
+      stage: 'recommend',
+      kind: 'analysis',
+      title: 'Carbon-aware ranking: B > C > D',
+      detail:
+        'Objective = total economic cost + carbon shadow price (€72/t full emissions, not just ETS scope) + risk penalty. B: +182k fuel + 18.7k ETS + 38k carbon-shadow − 400k premium avoided = net −161k vs do-nothing, risk 28. C: net −77k, risk 30, CII rating degrades B→C. D: net +61k, risk 58. Route B dominates.',
+      dataRefs: ['RT-0007-B'],
+    },
+    {
+      id: 'EVT-027',
+      ts: '2026-07-14T09:06:35Z',
+      agent: 'decision',
+      stage: 'recommend',
+      kind: 'analysis',
+      title: 'Bunker plan optimised: Straits Marine Energy, Port Klang',
+      detail:
+        'Cape routing needs +168 t and the B24 stem before departure from the region. Supplier DNA ranking at reachable ports: SUP-001 Straits Marine (rel 96, ESG 91, B24 ISCC, USD 9/t under Singapore spot, zero incidents) beats SUP-002 Meridian (barge queue 3–4 d) and Durban top-up (USD +28/t, 4–6 d lead, SIG-0033).',
+      dataRefs: ['SUP-001', 'SUP-002', 'SIG-0033', 'SIG-0034'],
+    },
+    {
+      id: 'EVT-028',
+      ts: '2026-07-14T09:06:48Z',
+      agent: 'decision',
+      stage: 'recommend',
+      kind: 'recommendation',
+      title: 'RECOMMENDATION: Route B + slow-steam ×2 + SUP-001 bunker shift',
+      detail:
+        'Divert via Cape of Good Hope with two slow-steam segments; bunker 620 t VLSFO + 180 t B24 at Port Klang with Straits Marine Energy. Impact: ETA +7.5 d, fuel +USD 182k, CO₂ +5.9% (halved from +11.8% raw), EU ETS +USD 18.7k, avoids ≈ USD 400k war-risk premium and all convoy exposure. FuelEU: PASS with 2.5% headroom.',
+      dataRefs: ['DEC-0042', 'RT-0007-B', 'SUP-001'],
+    },
+    {
+      id: 'EVT-029',
+      ts: '2026-07-14T09:07:02Z',
+      agent: 'decision',
+      stage: 'recommend',
+      kind: 'gate',
+      title: 'Reliability gate: READY — evidence complete',
+      detail:
+        'Evidence-completeness checklist 8/8: ≥3 independent sources per load-bearing claim ✓; deterministic calcs double-run with zero drift ✓; no unresolved conflicting signals ✓; regulatory citations current (EU 2023/957, EU 2023/1805) ✓; supplier verification current ✓; counterfactual quantified ✓; alternatives documented with rejection reasons ✓; decision reversible until Malacca exit (−14 h) ✓.',
+      dataRefs: ['DEC-0042'],
+    },
+    {
+      id: 'EVT-030',
+      ts: '2026-07-14T09:07:08Z',
+      agent: 'decision',
+      stage: 'recommend',
+      kind: 'handoff',
+      title: 'Handoff → Human Approval (Voyage Operations Manager)',
+      detail:
+        'Decision DEC-0042 packaged with full evidence trail, causal graph, 3 rejected alternatives and quantified impact deltas. Routed to the Voyage Operations Manager queue. Time-criticality flagged: divergence point in ~14 h.',
+      dataRefs: ['DEC-0042'],
+    },
+
+    /* ── APPROVE — Human gate ─────────────────────────────────────────── */
+    {
+      id: 'EVT-031',
+      ts: '2026-07-14T09:07:15Z',
+      agent: 'human',
+      stage: 'approve',
+      kind: 'observation',
+      title: 'Pending human approval',
+      detail:
+        'DEC-0042 is in the approval queue. The recommendation, its evidence, all alternatives, and the full agent trace are available for review. One-click approve executes the 5-step action list; override requires a reason and is preserved in the audit trail.',
+      dataRefs: ['DEC-0042'],
+    },
+    {
+      id: 'EVT-032',
+      ts: '2026-07-14T09:07:20Z',
+      agent: 'human',
+      stage: 'approve',
+      kind: 'gate',
+      title: 'Audit trail armed',
+      detail:
+        'On approval, OceanMind generates the ESG/compliance evidence report: decision rationale, signal citations, deterministic calculations, EU ETS / FuelEU positions, and the approver\'s signature — audit-ready for charterer, insurer and verifier.',
+      dataRefs: ['DEC-0042', 'RPT-2026-016'],
+    },
+  ],
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * CAUSAL GRAPH — root-cause DAG for the golden scenario
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+export const mockCausalGraph: { nodes: CausalNode[]; edges: CausalEdge[] } = {
+  nodes: [
+    {
+      id: 'CN-01',
+      label: 'Bab el-Mandeb escalation',
+      kind: 'event',
+      detail:
+        'Missile/drone attacks on merchant tonnage; UKMTO SEVERE. 9 corroborated signals over 60 h. Container vessels preferentially targeted (71% of incidents).',
+      severity: 'critical',
+      refId: 'DSR-001',
+    },
+    {
+      id: 'CN-02',
+      label: 'War-risk premium ×4',
+      kind: 'event',
+      detail: 'Additional premium 0.22% → 0.9% of hull value; some syndicates decline container tonnage (SIG-0003). ≈ USD 400k for this transit.',
+      severity: 'high',
+      refId: 'SIG-0003',
+    },
+    {
+      id: 'CN-03',
+      label: 'Suez transit risk ↑',
+      kind: 'chokepoint',
+      detail: 'Composite plan-of-record risk 82/100: attack exposure + insurance + convoy scarcity (2/week, 12 vessels, 3:1 oversubscribed).',
+      severity: 'critical',
+      refId: 'SIG-0006',
+    },
+    {
+      id: 'CN-04',
+      label: 'Industry reroute pressure',
+      kind: 'route',
+      detail: 'Two top-5 carriers divert all Asia–Europe strings via the Cape (SIG-0004); Suez daily transits −38% (SIG-0006).',
+      severity: 'high',
+      refId: 'SIG-0004',
+    },
+    {
+      id: 'CN-05',
+      label: 'Singapore bunker congestion',
+      kind: 'port',
+      detail: 'Bunker demand +22% w/w; barge lead time 3–4 days; VLSFO +5.5% to USD 612/t (SIG-0010, SIG-0034).',
+      severity: 'medium',
+      refId: 'SIG-0010',
+    },
+    {
+      id: 'CN-06',
+      label: 'Port Klang berth congestion',
+      kind: 'port',
+      detail: 'Berth waiting 24–30 h as diverted services re-sequence rotations (SIG-0011).',
+      severity: 'medium',
+      refId: 'SIG-0011',
+    },
+    {
+      id: 'CN-07',
+      label: 'Cape routing viable',
+      kind: 'route',
+      detail: '11,720 nm; no war-risk premium; winter Agulhas advisory manageable with slow-steaming; Durban bunkering tight but not needed if fuel loaded in Asia.',
+      severity: 'low',
+      refId: 'RT-0007-B',
+    },
+    {
+      id: 'CN-08',
+      label: 'VYG-2026-0007 plan degraded',
+      kind: 'voyage',
+      detail: 'MV OceanMind Harmony (14,000 TEU — highest-risk target class) holds a Suez plan of record with Bab el-Mandeb transit in ~9 days. Divergence point in ~14 h.',
+      severity: 'critical',
+      refId: 'VYG-2026-0007',
+    },
+    {
+      id: 'CN-09',
+      label: 'Quantified impact & decision',
+      kind: 'impact',
+      detail: 'DEC-0042: reroute via Cape + slow-steam. ETA +7.5 d · fuel +USD 182k · CO₂ +5.9% · avoids ≈ USD 400k premium · FuelEU PASS.',
+      severity: 'high',
+      refId: 'DEC-0042',
+    },
+  ],
+  edges: [
+    { id: 'CE-01', source: 'CN-01', target: 'CN-02', label: 'reprices insurance', confidence: 0.95 },
+    { id: 'CE-02', source: 'CN-01', target: 'CN-03', label: 'raises transit risk', confidence: 0.97 },
+    { id: 'CE-03', source: 'CN-02', target: 'CN-03', label: 'compounds cost of', confidence: 0.9 },
+    { id: 'CE-04', source: 'CN-03', target: 'CN-04', label: 'drives carriers to divert', confidence: 0.92 },
+    { id: 'CE-05', source: 'CN-04', target: 'CN-05', label: 'concentrates bunker demand', confidence: 0.85 },
+    { id: 'CE-06', source: 'CN-04', target: 'CN-06', label: 're-sequences port calls', confidence: 0.78 },
+    { id: 'CE-07', source: 'CN-04', target: 'CN-07', label: 'validates as industry norm', confidence: 0.83 },
+    { id: 'CE-08', source: 'CN-03', target: 'CN-08', label: 'invalidates plan of record', confidence: 0.94 },
+    { id: 'CE-09', source: 'CN-05', target: 'CN-09', label: 'forces early bunker lock-in', confidence: 0.8 },
+    { id: 'CE-10', source: 'CN-07', target: 'CN-09', label: 'enables reroute option', confidence: 0.88 },
+    { id: 'CE-11', source: 'CN-08', target: 'CN-09', label: 'requires decision within 14 h', confidence: 0.96 },
+  ],
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * ESG SUMMARY — fleet carbon & compliance position
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+export const mockEsgSummary: EsgSummary = {
+  asOf: '2026-07-14T08:00:00Z',
+  // Headline stats reconcile exactly with monthlyCo2 below:
+  // Σ actual = 158,230 t · Σ baseline = 171,070 t · Σ saved = 12,840 t (7.5%).
+  fleetCo2YtdTonnes: 158230,
+  co2SavedVsBaselineTonnes: 12840,
+  co2SavedPct: 7.5,
+  euEtsExposureUsd: 3427000,     // 70% phase-in, EUA €72, EU-touching voyages YTD
+  euEtsPhaseInPct: 70,
+  euEtsAllowancePriceEur: 72,
+  fuelEu: {
+    ghgIntensity: 87.6,
+    limit: 89.34,
+    compliant: true,
+    surplusDeficitPct: -1.9,     // 1.9% under the limit (surplus)
+  },
+  imoCii: {
+    fleetRating: 'B',
+    trend: 'improving',
+  },
+  monthlyCo2: [
+    { month: 'Jan', actual: 24120, baseline: 25900 },
+    { month: 'Feb', actual: 22480, baseline: 24300 },
+    { month: 'Mar', actual: 24950, baseline: 26800 },
+    { month: 'Apr', actual: 23710, baseline: 25650 },
+    { month: 'May', actual: 24880, baseline: 26900 },
+    { month: 'Jun', actual: 24390, baseline: 26520 },
+    { month: 'Jul', actual: 13700, baseline: 15000 },   // month-to-date
+  ],
+  sdgAlignment: [
+    {
+      sdg: 7,
+      title: 'Affordable & Clean Energy',
+      contribution:
+        'Supplier DNA scoring steers bunkering toward ISCC-certified biofuel blends and alt-fuel-ready suppliers, growing demand for clean marine energy.',
+      metric: '2,140 t biofuel blend bunkered YTD across 14 stems',
+    },
+    {
+      sdg: 9,
+      title: 'Industry, Innovation & Infrastructure',
+      contribution:
+        'Causal multi-agent decision engine replaces gut-feel rerouting with explainable, evidence-gated automation for critical trade infrastructure.',
+      metric: '41 AI-assisted decisions YTD · 100% with full audit evidence',
+    },
+    {
+      sdg: 13,
+      title: 'Climate Action',
+      contribution:
+        'Carbon-aware ranking prices every tonne of CO₂ into routing decisions — slow-steaming recommendations halved the reroute carbon penalty this quarter.',
+      metric: '11,840 tCO₂ avoided vs baseline (−7.4%)',
+    },
+    {
+      sdg: 14,
+      title: 'Life Below Water',
+      contribution:
+        'Optimised routings cut total fuel burned and exhaust deposition at sea; slow-steaming in sensitive waters also reduces whale-strike risk and underwater noise.',
+      metric: '3,760 t less fuel burned YTD vs baseline plans',
+    },
+  ],
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * COMPLIANCE REPORTS
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+export const mockReports: ComplianceReport[] = [
+  {
+    id: 'RPT-2026-016',
+    title: 'Decision Audit — DEC-0042 Red Sea reroute (VYG-2026-0007)',
+    type: 'DECISION_AUDIT',
+    period: 'July 2026',
+    generatedAt: '2026-07-14T09:12:30Z',
+    status: 'draft',
+    summary:
+      'Full evidence pack for the Cape of Good Hope reroute recommendation: 9 corroborated signals, causal graph, deterministic cost/carbon calculations (+5.9% CO₂ after slow-steaming, +USD 182k fuel, ≈ USD 400k war-risk avoided), FuelEU PASS, EU ETS delta +USD 18.7k. Awaiting Voyage Operations Manager signature — finalises automatically on approval.',
+    decisionIds: ['DEC-0042'],
+    voyageIds: ['VYG-2026-0007'],
+    sizeKb: 842,
+    preparedBy: 'OceanMind Decision Engine v2.4',
+  },
+  {
+    id: 'RPT-2026-015',
+    title: 'EU ETS Quarterly Position — Q2 2026',
+    type: 'EU_ETS',
+    period: 'Q2 2026',
+    generatedAt: '2026-07-05T10:00:00Z',
+    status: 'submitted',
+    summary:
+      'Verified emissions for EU-touching voyages Apr–Jun 2026: 21,410 tCO₂e in scope (70% phase-in, CH₄/N₂O included). Allowance liability €1.079M at €72/EUA average. 100% of voyage emissions backed by MRV-verified consumption records; zero data gaps.',
+    decisionIds: ['DEC-0039'],
+    voyageIds: ['VYG-2026-0002', 'VYG-2026-0008'],
+    sizeKb: 1264,
+    preparedBy: 'OceanMind Decision Engine v2.4',
+  },
+  {
+    id: 'RPT-2026-014',
+    title: 'FuelEU Maritime GHG-Intensity Statement — H1 2026',
+    type: 'FUELEU',
+    period: 'H1 2026',
+    generatedAt: '2026-07-03T14:30:00Z',
+    status: 'final',
+    summary:
+      'Fleet average GHG intensity 87.6 gCO₂e/MJ vs 89.34 limit — 1.9% compliance surplus, driven by 2,140 t of ISCC-certified biofuel blends. Surplus banked for pooling; estimated market value €118k at current pool prices.',
+    decisionIds: [],
+    voyageIds: ['VYG-2026-0007', 'VYG-2026-0002', 'VYG-2026-0008'],
+    sizeKb: 986,
+    preparedBy: 'OceanMind Decision Engine v2.4',
+  },
+  {
+    id: 'RPT-2026-013',
+    title: 'ESG Quarterly — Sustainable Operations Review Q2 2026',
+    type: 'ESG_QUARTERLY',
+    period: 'Q2 2026',
+    generatedAt: '2026-07-01T09:00:00Z',
+    status: 'final',
+    summary:
+      'Q2 highlights: 11,840 tCO₂ avoided vs baseline (−7.4%), fleet CII rating B and improving, 41 AI-assisted decisions with complete audit evidence, supplier ESG floor raised to 55/100 (one supplier delisted). SDG 7/9/13/14 contribution metrics included for stakeholder disclosure.',
+    decisionIds: ['DEC-0039', 'DEC-0041'],
+    voyageIds: [],
+    sizeKb: 1732,
+    preparedBy: 'OceanMind Decision Engine v2.4',
+  },
+];
