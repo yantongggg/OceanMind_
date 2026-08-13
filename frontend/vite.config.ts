@@ -474,6 +474,7 @@ function enrichProxy() {
 }
 
 export default defineConfig({
+  base: '/OceanMind_/',
   plugins: [
     figmaAssetResolver(),
     externalModelServer(),
