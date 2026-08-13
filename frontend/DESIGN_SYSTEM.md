@@ -1,10 +1,10 @@
-# OceanMind - Premium Enterprise Design System
+# BunkerGuard AI - Premium Enterprise Design System
 
 ## Design Philosophy
 
 **Premium Dark • Executive • Refined • Maritime Intelligence**
 
-OceanMind is a premium enterprise-grade maritime intelligence platform that feels like:
+BunkerGuard AI is a premium enterprise-grade maritime AI platform that feels like:
 - Linear × Stripe Dashboard × Bloomberg Terminal × Modern Maritime Operations Software
 
 **Visual Direction:**
